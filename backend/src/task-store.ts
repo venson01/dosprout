@@ -85,6 +85,14 @@ export function statusFromSubtasks(status: Task["status"], subtasks: Subtask[]):
   return status === "done" ? "todo" : status;
 }
 
+/**
+ * A task can't be "done" while some of its subtasks aren't.
+ * frontend/src/lib/task-helpers.ts has a copy of this, keep them the same.
+ */
+export function hasUnfinishedSubtasks(task: Pick<Task, "subtasks">): boolean {
+  return task.subtasks.some((subtask) => !subtask.done);
+}
+
 // SQL snippets used in several queries below.
 // The current time as a UTC timestamp, e.g. "2026-11-17T16:00:00.000Z".
 const NOW = "strftime('%Y-%m-%dT%H:%M:%fZ', 'now')";

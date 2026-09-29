@@ -5,7 +5,14 @@ import { useSearchParams } from "next/navigation";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useDismiss } from "@/hooks/use-dismiss";
 import { useTaskList } from "@/hooks/tasks-context";
-import { matchesSearch, SORT_LABELS, sortTasks, type SortMode } from "@/lib/task-helpers";
+import {
+  finishSubtasksFirst,
+  hasUnfinishedSubtasks,
+  matchesSearch,
+  SORT_LABELS,
+  sortTasks,
+  type SortMode,
+} from "@/lib/task-helpers";
 import { STATUSES, type Status, type Task } from "@/lib/types";
 import { BoardView } from "./board-view";
 import { ListView } from "./list-view";
@@ -61,6 +68,16 @@ export function TasksView() {
     promise.catch((error: Error) => setToast(error.message));
   }
 
+  // Every way of changing a task's column (checkbox, menu, board drag) comes through here.
+  function moveTask(task: Task, status: Status) {
+    // Explain right away instead of waiting for the server to refuse.
+    if (status === "done" && hasUnfinishedSubtasks(task)) {
+      setToast(finishSubtasksFirst(task));
+      return;
+    }
+    showErrors(updateTask(task.id, { status }));
+  }
+
   function confirmDelete(task: Task) {
     if (!window.confirm(`Delete "${task.title}"? This can't be undone.`)) return false;
     showErrors(deleteTask(task.id));
@@ -70,9 +87,8 @@ export function TasksView() {
   const actions: TaskActions = {
     onOpen: (task) => setEditor({ task, status: task.status }),
     onCreate: (status) => setEditor({ task: null, status }),
-    onMove: (task, status) => showErrors(updateTask(task.id, { status })),
-    onToggleDone: (task) =>
-      showErrors(updateTask(task.id, { status: task.status === "done" ? "todo" : "done" })),
+    onMove: (task, status) => moveTask(task, status),
+    onToggleDone: (task) => moveTask(task, task.status === "done" ? "todo" : "done"),
     onDelete: confirmDelete,
   };
 

@@ -92,6 +92,20 @@ export function statusFromSubtasks(status: Status, subtasks: { done: boolean }[]
   return status === "done" ? "todo" : status;
 }
 
+/**
+ * A task can't be "done" while some of its subtasks aren't. The backend has the
+ * same rule (hasUnfinishedSubtasks in backend/src/task-store.ts) and refuses it too.
+ */
+export function hasUnfinishedSubtasks(task: { subtasks: { done: boolean }[] }): boolean {
+  return task.subtasks.some((subtask) => !subtask.done);
+}
+
+/** The message shown when someone tries to mark such a task as done. */
+export function finishSubtasksFirst(task: Pick<Task, "title" | "subtasks">): string {
+  const finished = task.subtasks.filter((subtask) => subtask.done).length;
+  return `Tick off all subtasks of "${task.title}" first (${finished} of ${task.subtasks.length} done).`;
+}
+
 export function isOverdue(task: Task): boolean {
   return task.status !== "done" && task.dueAt !== null && new Date(task.dueAt) < new Date();
 }

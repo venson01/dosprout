@@ -2,7 +2,7 @@
 
 import { Check, ChevronDown, Plus } from "lucide-react";
 import { useState } from "react";
-import { isOverdue, STATUS_LABELS } from "@/lib/task-helpers";
+import { hasUnfinishedSubtasks, isOverdue, STATUS_LABELS } from "@/lib/task-helpers";
 import { STATUSES, type Status, type Task } from "@/lib/types";
 import { OverdueBadge, PriorityBadge, TagBadge, TaskDate } from "./badges";
 import type { TaskActions, TaskGroups } from "./task-actions";
@@ -88,6 +88,8 @@ function StatusSection({
 
 function TaskRow({ task, actions }: { task: Task; actions: TaskActions }) {
   const done = task.status === "done";
+  // Can't be ticked until every subtask is (clicking it explains why).
+  const blocked = !done && hasUnfinishedSubtasks(task);
   const overdue = isOverdue(task);
   const finished = task.subtasks.filter((s) => s.done).length;
 
@@ -98,10 +100,22 @@ function TaskRow({ task, actions }: { task: Task; actions: TaskActions }) {
           type="button"
           role="checkbox"
           aria-checked={done}
-          aria-label={done ? `Mark "${task.title}" as not done` : `Mark "${task.title}" as done`}
+          aria-label={
+            done
+              ? `Mark "${task.title}" as not done`
+              : blocked
+                ? `Mark "${task.title}" as done (finish its subtasks first)`
+                : `Mark "${task.title}" as done`
+          }
+          aria-disabled={blocked}
+          title={blocked ? "Finish all subtasks first" : undefined}
           onClick={() => actions.onToggleDone(task)}
           className={`mt-0.5 grid size-5 shrink-0 place-items-center rounded border transition-colors ${
-            done ? "border-brand bg-brand text-white" : "border-line bg-white hover:border-brand"
+            done
+              ? "border-brand bg-brand text-white"
+              : blocked
+                ? "cursor-not-allowed border-line bg-page"
+                : "border-line bg-white hover:border-brand"
           }`}
         >
           {done && <Check className="size-3.5" strokeWidth={3} />}

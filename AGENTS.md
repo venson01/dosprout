@@ -10,33 +10,21 @@ Humans should start with [README.md](README.md).
 - The owner is a **beginner**. Keep code simple and readable, prefer plain solutions over clever ones,
   add short comments that explain *why*, and explain your changes in plain language.
   Don't add new libraries unless they clearly pay for themselves, and say why when you do.
+- Pages: **Tasks** (list + board), **Calendar**, and "Coming soon" placeholders for the rest.
+  There is no login: everyone using the same backend shares one task list.
 
 ## Stack
 
-| Part     | Tech                                                                 | Folder      | Port |
-| -------- | -------------------------------------------------------------------- | ----------- | ---- |
-| Frontend | Next.js 16 (App Router), React 19, Tailwind CSS v4, TypeScript       | `frontend/` | 3000 |
-| Backend  | Fastify 5, TypeScript (run with `tsx`), SQLite via `@libsql/client` (Turso) | `backend/`  | 4000 |
+| Part     | Tech                                                                        | Folder      | Port |
+| -------- | --------------------------------------------------------------------------- | ----------- | ---- |
+| Frontend | Next.js 16 (App Router), React 19, Tailwind CSS v4, TypeScript 5            | `frontend/` | 3000 |
+| Backend  | Fastify 5, TypeScript 5 (run with `tsx`), SQLite via `@libsql/client` (Turso) | `backend/`  | 4000 |
 
 - Node.js **22.13 or newer** is required (the tests use `node:sqlite`). Developed on Node 24, Windows 11.
-- Other libraries: `lucide-react` (icons), `@dnd-kit/core` (board drag & drop), `@fastify/cors`.
+- Other libraries: `lucide-react` (icons), `@dnd-kit/core` (drag & drop on the board and the calendar),
+  `@fastify/cors`, `concurrently` (root, runs both apps with `npm run dev`).
 - Database: `@libsql/client` talks to a local file (`file:data/todos.db`, the default), a Turso
-  cloud database (`libsql://...`, used on Vercel), or `:memory:` (tests). Set by `TURSO_DATABASE_URL`
-  and `TURSO_AUTH_TOKEN`.
-- Deployed as ONE Vercel project with Vercel Services ([vercel.json](vercel.json)): `/api/(.*)` goes to
-  the `backend` service, everything else to `frontend`. The backend sees the full path (`/api/tasks`).
-  No service bindings: the frontend only calls the API from the browser, not from server code.
-  The backend service's `buildCommand` is only a type check on purpose: if a build leaves `dist/`,
-  Vercel reuses it at the function root without `package.json`, so `"type": "module"` is lost and
-  the backend crashes ("Cannot use import statement outside a module"). Without `dist/`, Vercel
-  bundles `src/server.ts` itself as `.mjs`. Also keep TypeScript at 5.x in the backend: Vercel's
-  builder type-checks with the project's TypeScript and fails with TypeScript 7.
-- No top-level `await` in `server.ts` (or anything it imports): Vercel loads the backend with
-  `require()`, which can't load such modules, and requests then hang. That's why `buildApp()` isn't
-  async and opens the database inside a Fastify plugin, and why `app.listen()` isn't awaited.
-- Turso is opened with `@libsql/client/web` (see `connect()` in `db.ts`). The default
-  `@libsql/client` loads a native library that Vercel can't bundle; it's only used for local files.
-  See "Deploy to Vercel" in README.md.
+  cloud database (`libsql://...`, used on Vercel), or `:memory:` (tests).
 - The browser always calls `/api/...` on the website's own address (`lib/api.ts`). Locally,
   `next.config.ts` forwards `/api` to `BACKEND_URL` (default http://localhost:4000); on Vercel,
   vercel.json does the routing. `NEXT_PUBLIC_API_URL` is only for a backend on another domain.
@@ -49,46 +37,69 @@ Humans should start with [README.md](README.md).
 Run from the repository root (they forward to the right folder):
 
 ```bash
-npm install          # installs root, backend and frontend dependencies
-npm run dev          # starts backend (4000) and frontend (3000) together
-npm test             # backend API tests (node:test + fastify.inject)
-npm run typecheck    # TypeScript checks for both apps
-npm run lint         # ESLint for the frontend
-npm run build        # production builds of both apps
+npm install            # installs root, backend and frontend dependencies
+npm run dev            # starts backend (4000) and frontend (3000) together
+npm test               # backend API tests (node:test + fastify.inject)
+npm run typecheck      # TypeScript checks for both apps
+npm run lint           # ESLint for the frontend
+npm run build          # production builds of both apps
+npm run copy-to-turso  # copy local tasks into the Turso database set in backend/.env (--replace to overwrite)
 ```
 
 Before saying a change is finished, run `npm test`, `npm run typecheck` and `npm run lint`,
-and fix any failures.
+and fix any failures. There are no frontend tests yet, so check UI changes in the browser.
+
+## Environment variables
+
+All optional; see the `.env.example` files. `.env` files are git-ignored (they hold the Turso token).
+
+| Where                   | Variable                                | Default / meaning                                              |
+| ----------------------- | --------------------------------------- | -------------------------------------------------------------- |
+| `backend/.env`          | `PORT`, `HOST`                          | `4000`, `localhost`                                            |
+| `backend/.env`          | `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` | `file:data/todos.db` / none. Empty counts as not set. Required on Vercel (the backend refuses to start with a file there). |
+| `backend/.env`          | `CORS_ORIGIN`                           | `http://localhost:3000`; only matters if the website is on another domain |
+| `backend/.env`          | `LOG_LEVEL`                             | `info`                                                         |
+| `frontend/.env.local`   | `BACKEND_URL`                           | `http://localhost:4000`; where `next dev` forwards `/api`      |
+| `frontend/.env.local`   | `NEXT_PUBLIC_API_URL`                   | unset (same domain); only for a backend on another domain      |
 
 ## Folder map
 
 ```
+vercel.json          Vercel Services config: /api/(.*) -> backend, everything else -> frontend
 backend/src/
   server.ts          starts the server; reads env vars (see backend/.env.example)
   build-app.ts       buildApp(): creates Fastify, CORS, routes (used by tests too). Not named
                      app.ts because Vercel would treat src/app.ts as the server entry point.
-  db.ts              opens the database, runs MIGRATIONS, seeds example tasks on first run
-  task-store.ts      TaskStore class: ALL SQL lives here
+  db.ts              connect() + openDatabase(): runs MIGRATIONS, seeds example tasks on first run
+  task-store.ts      TaskStore class: ALL SQL lives here (+ statusFromSubtasks, hasUnfinishedSubtasks)
   routes/tasks.ts    HTTP routes + JSON-schema validation
   types.ts           API data types (source of truth)
   copy-tasks.ts      copyTasks(): copies all tasks between two databases (keeps ids)
   scripts/copy-to-turso.ts  `npm run copy-to-turso`: local file -> Turso database in backend/.env
   app.test.ts        API tests using an in-memory database
+frontend/
+  next.config.ts     forwards /api to the backend while developing (not on Vercel)
 frontend/src/
-  app/               pages: /tasks (main), /calendar, /[section] (coming-soon pages), layout.tsx
-  components/layout/ AppShell, Sidebar, TopBar (search box), Notifications (bell + pop-ups)
+  app/               pages: / (redirects to /tasks), /tasks, /calendar,
+                     /[section] (coming-soon pages), layout.tsx
+  components/layout/ AppShell, Sidebar, TopBar (search box), Notifications (bell, list, pop-ups)
   components/tasks/  TasksView (page logic), ListView, BoardView, TaskDialog, TaskMenu, badges,
-                     feedback (ErrorToast, LoadError, LoadingSkeleton; shared with the calendar)
+                     task-actions (types), feedback (ErrorToast, LoadError, LoadingSkeleton;
+                     shared with the calendar)
   components/calendar/ CalendarView: month grid, task bars from start day to due day, drag to move
-  lib/calendar.ts    local-day helpers: monthWeeks, taskDays, weekBars (bar rows), shiftTimestamp
   hooks/use-tasks.ts loads tasks + create/update/delete, with optimistic updates
   hooks/tasks-context.tsx  TasksProvider (in AppShell) shares useTasks() + a clock app-wide;
                      components read it with useTaskList()
   hooks/use-clock.ts wakes up exactly when the next start/reminder/due moment arrives
-  lib/notifications.ts works out notifications from the tasks (see below)
+  hooks/use-notifications-read-at.ts  which notifications are read (localStorage)
+  hooks/use-desktop-notifications.ts  desktop (system) notifications: on/off + sending
+  hooks/use-dismiss.ts closes pop-up menus on outside click / Escape
   lib/api.ts         fetch wrapper for the backend
   lib/types.ts       copy of backend/src/types.ts
-  lib/task-helpers.ts labels, sorting, search, date formatting
+  lib/task-helpers.ts labels, sorting, search, date formatting, statusFromSubtasks,
+                     hasUnfinishedSubtasks, isOverdue
+  lib/notifications.ts works out notifications from the tasks (see below)
+  lib/calendar.ts    local-day helpers: monthWeeks, taskDays, weekBars (bar rows), shiftTimestamp
 ```
 
 ## API
@@ -108,6 +119,9 @@ Base URL `/api` (locally also `http://localhost:4000/api`). JSON in and out. Err
 | PATCH  | `/tasks/:id/subtasks/:subtaskId`     | `{ title?, done? }`                               | parent `Task`    |
 | DELETE | `/tasks/:id/subtasks/:subtaskId`     |                                                   | parent `Task`    |
 
+400 errors, besides invalid bodies: `dueAt` earlier than `startAt`, and `status: "done"` while the
+task has unfinished subtasks (on POST: `status: "done"` together with `subtasks`).
+
 Data model:
 - `status`: `"todo" | "in_progress" | "done"`. `priority`: `"low" | "mid" | "high"`.
 - `tag`: one free-text label (e.g. "Work"), `""` when there is none.
@@ -116,22 +130,65 @@ Data model:
   (`toUtcTimestamp` in `task-store.ts`) so they sort as plain text, and rejects `dueAt` earlier than `startAt`.
   The browser shows them in the viewer's local time. `toDateAndTime` / `fromDateAndTime` in
   `frontend/src/lib/task-helpers.ts` convert between timestamps and the dialog's date and time inputs.
-  A task is overdue when `dueAt` has passed and it isn't done.
+  A task is overdue when `dueAt` has passed and it isn't done; it then shows red with an Overdue label.
 - `completedAt`: set by the server when a task moves to `done`, cleared when it leaves `done`.
-- Notifications are not stored. `notificationsFromTasks` derives them from the tasks: "started" at
-  `startAt`, "due tomorrow" 24 hours before `dueAt`, and "done" at `completedAt`. Starts and reminders
-  only count if they fall after `createdAt` and before `completedAt`. Which ones are read is kept in
-  the browser's localStorage (`use-notifications-read-at.ts`). Pop-ups only appear for events that
-  happen while the app is open.
+- `position`: order within a status column. Changing status without a position moves the task to the bottom.
+- Subtask routes return the whole parent task so the frontend can just swap it in.
+- **Subtasks drive the status:** after any subtask change, all done → `done`, some done → `in_progress`,
+  none done → `todo` if it was `done`. `statusFromSubtasks` in `task-store.ts` has a copy in
+  `frontend/src/lib/task-helpers.ts` (used by the dialog). Changing `status` directly is still allowed,
+  except to `done` while a subtask is unfinished (the API answers 400). The frontend checks first with
+  `hasUnfinishedSubtasks` and explains (checkbox, ⋮ menu, board drag and the dialog's Status field),
+  so users rarely see the 400.
+
+## Notifications
+
+- Notifications are not stored. `notificationsFromTasks` (`lib/notifications.ts`) derives them from the
+  tasks: "started" at `startAt`, "due tomorrow" 24 hours before `dueAt`, and "done" at `completedAt`.
+  Starts and reminders only count if they fall after `createdAt` and before `completedAt`.
+- `useClock` (via `TasksProvider`) re-renders exactly when the next start, reminder or due time
+  arrives (and when the tab becomes visible again), so notifications and overdue styling appear
+  on time without polling.
+- Which ones are read is kept in the browser's localStorage (`use-notifications-read-at.ts`).
+  Pop-ups only appear for events that happen while the app is open.
 - Desktop notifications (`use-desktop-notifications.ts`) use the browser's Notification API. They're
   turned on from the bell's list (browsers only ask for permission after a click), and are sent only
   while a DoSprout tab is open but you're looking elsewhere. Notifying while the browser is closed
   would need web push (service worker + server job) and isn't built.
-- `position`: order within a status column. Changing status without a position moves the task to the bottom.
-- Subtask routes return the whole parent task so the frontend can just swap it in.
-- Subtasks drive the status: after any subtask change, all done → `done`, some done → `in_progress`,
-  none done → `todo` if it was `done`. `statusFromSubtasks` in `task-store.ts` has a copy in
-  `frontend/src/lib/task-helpers.ts` (used by the dialog). Changing `status` directly is still allowed.
+
+## Calendar
+
+- A task covers every day from its start day to its due day (only one date = that day; no dates =
+  not shown, with a note below the calendar). Days are in the viewer's timezone. Weeks start on
+  Monday (`WEEK_STARTS_ON` in `lib/calendar.ts`).
+- Each week row shows up to 3 bars per day, the rest as "+N more". Unfinished tasks get the rows
+  first, then the ones that start first, then the ones due soonest.
+- Dragging a bar shifts start and due by the same number of days (keeping times), measured from the
+  day of the bar that was grabbed. Keyboard: Space, arrows (←/→ a day, ↑/↓ a week), Space.
+- The month shown lives in the URL (`?month=2026-09`). Below `md` it shows a small month with dots
+  instead of bars, plus the selected day's task list.
+
+## Deployed on Vercel (read before changing the backend setup)
+
+- ONE Vercel project with Vercel Services ([vercel.json](vercel.json)): `/api/(.*)` goes to the
+  `backend` service, everything else to `frontend`. The backend sees the full path (`/api/tasks`).
+  No service bindings: the frontend only calls the API from the browser, not from server code.
+- Live at **https://dosprout.vercel.app** (production domain). Every push to `main` on GitHub
+  deploys there. Env vars on Vercel: `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`.
+- Four problems this project already works around. Don't undo these:
+  1. **TypeScript 5.x in the backend.** Vercel's builder type-checks with the project's TypeScript
+     and crashes with TypeScript 7 ("Cannot read properties of undefined (reading 'readFile')").
+  2. **The backend service's `buildCommand` is only a type check.** If a build leaves `dist/`, Vercel
+     reuses it at the function root without `package.json`, so `"type": "module"` is lost and the
+     backend crashes ("Cannot use import statement outside a module"). Without `dist/`, Vercel
+     bundles `src/server.ts` itself as `.mjs`.
+  3. **Turso is opened with `@libsql/client/web`** (see `connect()` in `db.ts`). The default
+     `@libsql/client` loads a native library that Vercel can't bundle; it's only used for local files.
+  4. **No top-level `await` in `server.ts`** (or anything it imports). Vercel loads the backend with
+     `require()`, which can't load such modules, and requests then hang. That's why `buildApp()`
+     isn't async and opens the database inside a Fastify plugin, and why `app.listen()` isn't awaited.
+- Deployment Protection is on: each deployment's own URL needs a Vercel login; the production
+  domain is public. Look at a deployment's **Logs** tab for backend errors.
 
 ## Rules and conventions
 
@@ -149,16 +206,17 @@ Data model:
 - Every new endpoint or behaviour needs a test in `backend/src/app.test.ts`.
 - Backend imports use the `.js` extension (`import { x } from "./db.js"`). This is required by ESM/NodeNext.
 - Frontend: components that use state or effects start with `"use client"`. Use the `@/` import alias.
+  Read tasks and their actions with `useTaskList()`, not `useTasks()` directly (so there's one copy).
+- React's lint rules forbid impure calls like `Date.now()` during render: use `now` from
+  `useTaskList()`, or call them in event handlers and effects.
 - Styling: Tailwind utility classes only. Colors come from the tokens in `frontend/src/app/globals.css`
   (`bg-brand`, `text-muted`, `bg-high-bg`, `border-line`, ...). Add a new token rather than hard-coding hex values.
   The font is Poppins.
 - UI must work from 375px phones to desktop with no sideways page scrolling. The sidebar becomes a drawer below `lg`.
 - Accessibility: real `<button>`s, `aria-label` on icon-only buttons, visible focus rings,
   and keyboard support (the board and the calendar support Space + arrow keys to move tasks).
-- Calendar: a task covers every day from its start day to its due day (only one date = that day).
-  Dragging a bar shifts start and due by the same number of days (keeping times). The month
-  shown lives in the URL (`?month=2026-09`). Below `md` it shows a small month with dots instead.
-- Search (`?q=`) and view (`?view=board`) live in the URL. Update them with `window.history.replaceState`.
+- Search (`?q=`), view (`?view=board`) and the calendar month (`?month=`) live in the URL.
+  Update them with `window.history.replaceState`.
 - User-facing error messages should say what to do next (see the "Couldn't load your tasks" screen).
 - Don't commit `.env` files or `backend/data/` (the local SQLite database).
 
@@ -167,5 +225,6 @@ Data model:
 - User accounts and login (the sidebar "Log Out" is disabled, and the top bar shows "Guest").
 - Dashboard, Goals, Time and Settings pages (they currently show "Coming soon").
 - Reordering cards within a board column (drag & drop currently only changes the column).
+- Notifications while the browser is closed (web push).
 - File attachments (shown in the moodboard) and dark mode.
 - Frontend tests (e.g. Vitest + Testing Library, or Playwright).

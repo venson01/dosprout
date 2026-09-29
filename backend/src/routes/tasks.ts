@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
-import { toUtcTimestamp, type TaskStore } from "../task-store.js";
+import { hasUnfinishedSubtasks, toUtcTimestamp, type TaskStore } from "../task-store.js";
 import {
   PRIORITIES,
   STATUSES,
@@ -50,6 +50,8 @@ function badRequest(reply: FastifyReply, message: string) {
 }
 
 const DATES_OUT_OF_ORDER = "The due date can't be earlier than the start date.";
+const SUBTASKS_UNFINISHED =
+  "This task still has unfinished subtasks. Tick them all off first, then it's done.";
 
 /** A task may have either date, both, or neither, but it can't be due before it starts. */
 function datesInOrder(startAt: string | null | undefined, dueAt: string | null | undefined) {
@@ -91,6 +93,10 @@ export async function taskRoutes(app: FastifyInstance, opts: { store: TaskStore 
       if (!datesInOrder(request.body.startAt, request.body.dueAt)) {
         return badRequest(reply, DATES_OUT_OF_ORDER);
       }
+      // New subtasks always start unfinished, so a task with subtasks can't start as done.
+      if (request.body.status === "done" && (request.body.subtasks?.length ?? 0) > 0) {
+        return badRequest(reply, SUBTASKS_UNFINISHED);
+      }
       return reply.code(201).send(await store.create(request.body));
     },
   );
@@ -114,6 +120,9 @@ export async function taskRoutes(app: FastifyInstance, opts: { store: TaskStore 
       // Check the dates as they will be after this update.
       const { startAt = existing.startAt, dueAt = existing.dueAt } = request.body;
       if (!datesInOrder(startAt, dueAt)) return badRequest(reply, DATES_OUT_OF_ORDER);
+      if (request.body.status === "done" && hasUnfinishedSubtasks(existing)) {
+        return badRequest(reply, SUBTASKS_UNFINISHED);
+      }
       return (await store.update(request.params.id, request.body)) ?? notFound(reply);
     },
   );

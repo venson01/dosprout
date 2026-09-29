@@ -3,7 +3,7 @@
 import { EllipsisVertical } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
 import { useDismiss } from "@/hooks/use-dismiss";
-import { STATUS_LABELS } from "@/lib/task-helpers";
+import { hasUnfinishedSubtasks, STATUS_LABELS } from "@/lib/task-helpers";
 import { STATUSES, type Status, type Task } from "@/lib/types";
 
 interface TaskMenuProps {
@@ -53,11 +53,17 @@ export function TaskMenu({ task, onEdit, onMove, onDelete }: TaskMenuProps) {
         >
           <MenuItem onClick={() => choose(onEdit)}>Edit</MenuItem>
           <p className="px-3 pb-1 pt-2 text-xs text-muted">Move to</p>
-          {STATUSES.filter((status) => status !== task.status).map((status) => (
-            <MenuItem key={status} onClick={() => choose(() => onMove(status))}>
-              {STATUS_LABELS[status]}
-            </MenuItem>
-          ))}
+          {STATUSES.filter((status) => status !== task.status).map((status) =>
+            status === "done" && hasUnfinishedSubtasks(task) ? (
+              <MenuItem key={status} disabled hint="Finish all subtasks first">
+                {STATUS_LABELS[status]}
+              </MenuItem>
+            ) : (
+              <MenuItem key={status} onClick={() => choose(() => onMove(status))}>
+                {STATUS_LABELS[status]}
+              </MenuItem>
+            ),
+          )}
           <div className="my-1 border-t border-line" />
           <MenuItem onClick={() => choose(onDelete)} danger>
             Delete
@@ -72,19 +78,28 @@ function MenuItem({
   children,
   onClick,
   danger = false,
+  disabled = false,
+  hint,
 }: {
   children: React.ReactNode;
-  onClick: () => void;
+  onClick?: () => void;
   danger?: boolean;
+  disabled?: boolean;
+  /** Small grey text under the label, e.g. why the item is disabled. */
+  hint?: string;
 }) {
   return (
     <button
       type="button"
       role="menuitem"
       onClick={onClick}
-      className={`block w-full px-3 py-1.5 text-left hover:bg-page ${danger ? "text-high" : ""}`}
+      disabled={disabled}
+      className={`block w-full px-3 py-1.5 text-left ${
+        disabled ? "cursor-not-allowed text-muted" : "hover:bg-page"
+      } ${danger ? "text-high" : ""}`}
     >
       {children}
+      {hint && <span className="block text-xs text-muted">{hint}</span>}
     </button>
   );
 }

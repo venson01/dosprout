@@ -235,8 +235,37 @@ describe("tasks API", () => {
     assert.equal((response.json() as Task).status, "todo");
   });
 
+  test("a task with unfinished subtasks can't be marked done", async () => {
+    const task = await createTask({ title: "Launch", subtasks: ["Build", "Ship"] });
+    const url = `/api/tasks/${task.id}`;
+
+    const blocked = await app.inject({ method: "PATCH", url, payload: { status: "done" } });
+    assert.equal(blocked.statusCode, 400);
+    assert.match(blocked.json().message, /unfinished subtasks/);
+    const unchanged = await app.inject({ method: "GET", url });
+    assert.equal((unchanged.json() as Task).status, "todo");
+
+    // Creating it as done straight away is blocked too (new subtasks start unfinished)...
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/tasks",
+      payload: { title: "Too soon", status: "done", subtasks: ["Step"] },
+    });
+    assert.equal(created.statusCode, 400);
+    // ...but a task without subtasks can be.
+    assert.equal((await createTask({ title: "Simple", status: "done" })).status, "done");
+
+    // Once every subtask is ticked it's done, and it can go back and forth after that.
+    for (const subtask of task.subtasks) {
+      await app.inject({ method: "PATCH", url: `${url}/subtasks/${subtask.id}`, payload: { done: true } });
+    }
+    await app.inject({ method: "PATCH", url, payload: { status: "in_progress" } });
+    const done = await app.inject({ method: "PATCH", url, payload: { status: "done" } });
+    assert.equal(done.statusCode, 200);
+  });
+
   test("remembers when a task was completed", async () => {
-    const task = await createTask({ title: "Water plants", subtasks: ["Balcony"] });
+    const task = await createTask({ title: "Water plants" });
     assert.equal(task.completedAt, null);
     const patch = async (payload: object, url = `/api/tasks/${task.id}`) =>
       (await app.inject({ method: "PATCH", url, payload })).json() as Task;
@@ -248,8 +277,12 @@ describe("tasks API", () => {
     assert.equal((await patch({ title: "Water all plants" })).completedAt, done.completedAt);
     assert.equal((await patch({ status: "todo" })).completedAt, null, "cleared when reopened");
 
-    // Finishing it by ticking every subtask counts too.
-    const bySubtasks = await patch({ done: true }, `/api/tasks/${task.id}/subtasks/${task.subtasks[0].id}`);
+    // Finishing a task by ticking every subtask counts too.
+    const withSubtask = await createTask({ title: "Water balcony", subtasks: ["Balcony"] });
+    const bySubtasks = await patch(
+      { done: true },
+      `/api/tasks/${withSubtask.id}/subtasks/${withSubtask.subtasks[0].id}`,
+    );
     assert.equal(bySubtasks.status, "done");
     assert.ok(bySubtasks.completedAt);
 

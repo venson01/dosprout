@@ -125,6 +125,9 @@ export function useTasks() {
       if (!original) {
         let task = await api.createTask({
           ...fields,
+          // New subtasks start unticked, and the API won't create a task as "done"
+          // with unfinished subtasks. Ticking them all below makes it done anyway.
+          status: draft.subtasks.length > 0 && fields.status === "done" ? "todo" : fields.status,
           subtasks: draft.subtasks.map((s) => s.title),
         });
         // New subtasks start unchecked, so tick the ones marked done in the dialog.

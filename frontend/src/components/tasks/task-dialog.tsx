@@ -6,6 +6,7 @@ import type { DraftSubtask, TaskDraft } from "@/hooks/use-tasks";
 import {
   fromDateAndTime,
   PRIORITY_LABELS,
+  hasUnfinishedSubtasks,
   STATUS_LABELS,
   statusFromSubtasks,
   TAG_SUGGESTIONS,
@@ -132,6 +133,10 @@ export function TaskDialog({
       setError("Subtasks can't be empty. Remove them or add some text.");
       return;
     }
+    if (draft.status === "done" && hasUnfinishedSubtasks(draft) && task?.status !== "done") {
+      setError("Tick off all subtasks before marking the task as done.");
+      return;
+    }
     if ((draft.startDate && !draft.startTime) || (draft.dueDate && !draft.dueTime)) {
       setError("Please pick a time for each date (or clear the date).");
       return;
@@ -230,11 +235,16 @@ export function TaskDialog({
                 onChange={(e) => update("status", e.target.value as Status)}
                 className={inputClass}
               >
-                {STATUSES.map((status) => (
-                  <option key={status} value={status}>
-                    {STATUS_LABELS[status]}
-                  </option>
-                ))}
+                {STATUSES.map((status) => {
+                  // "Done" only becomes available once every subtask is ticked.
+                  const blocked = status === "done" && hasUnfinishedSubtasks(draft);
+                  return (
+                    <option key={status} value={status} disabled={blocked}>
+                      {STATUS_LABELS[status]}
+                      {blocked ? " (finish subtasks first)" : ""}
+                    </option>
+                  );
+                })}
               </select>
             </div>
             <fieldset>
