@@ -30,6 +30,8 @@ export interface Task {
   position: number;
   createdAt: string;
   updatedAt: string;
+  /** When the task was last moved to "done" (UTC), or null while it isn't done. Set by the server. */
+  completedAt: string | null;
   subtasks: Subtask[];
 }
 

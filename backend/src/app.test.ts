@@ -6,7 +6,9 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { FastifyInstance } from "fastify";
 import { buildApp } from "./build-app.js";
+import { copyTasks, TargetNotEmptyError } from "./copy-tasks.js";
 import { openDatabase } from "./db.js";
+import { TaskStore } from "./task-store.js";
 import type { Task } from "./types.js";
 
 // Every test gets a fresh, empty in-memory database.
@@ -233,6 +235,28 @@ describe("tasks API", () => {
     assert.equal((response.json() as Task).status, "todo");
   });
 
+  test("remembers when a task was completed", async () => {
+    const task = await createTask({ title: "Water plants", subtasks: ["Balcony"] });
+    assert.equal(task.completedAt, null);
+    const patch = async (payload: object, url = `/api/tasks/${task.id}`) =>
+      (await app.inject({ method: "PATCH", url, payload })).json() as Task;
+
+    const done = await patch({ status: "done" });
+    assert.ok(done.completedAt, "set when moved to done");
+    assert.ok(Math.abs(Date.parse(done.completedAt) - Date.now()) < 60_000);
+
+    assert.equal((await patch({ title: "Water all plants" })).completedAt, done.completedAt);
+    assert.equal((await patch({ status: "todo" })).completedAt, null, "cleared when reopened");
+
+    // Finishing it by ticking every subtask counts too.
+    const bySubtasks = await patch({ done: true }, `/api/tasks/${task.id}/subtasks/${task.subtasks[0].id}`);
+    assert.equal(bySubtasks.status, "done");
+    assert.ok(bySubtasks.completedAt);
+
+    const createdDone = await createTask({ title: "Already finished", status: "done" });
+    assert.ok(createdDone.completedAt);
+  });
+
   test("a subtask can only be changed through its own task", async () => {
     const first = await createTask({ title: "First", subtasks: ["mine"] });
     const second = await createTask({ title: "Second" });
@@ -242,6 +266,30 @@ describe("tasks API", () => {
       payload: { done: true },
     });
     assert.equal(response.statusCode, 404);
+  });
+});
+
+describe("copying tasks to another database", () => {
+  test("copies every task and subtask exactly, and refuses to overwrite unless asked", async () => {
+    const from = await openDatabase({ url: ":memory:", seed: true });
+    const to = await openDatabase({ url: ":memory:", seed: true });
+    const fromStore = new TaskStore(from);
+    await fromStore.create({ title: "Only in the source", subtasks: ["x"] });
+
+    // The target has the example tasks, so it isn't empty.
+    await assert.rejects(copyTasks(from, to), TargetNotEmptyError);
+
+    const result = await copyTasks(from, to, { replace: true });
+    assert.equal(result.tasks, 6);
+    const toStore = new TaskStore(to);
+    assert.deepEqual(await toStore.list(), await fromStore.list());
+
+    // New tasks in the target don't reuse the copied ids.
+    const next = await toStore.create({ title: "After the copy" });
+    assert.ok(next.id > Math.max(...(await fromStore.list()).map((t) => t.id)));
+
+    from.close();
+    to.close();
   });
 });
 

@@ -45,6 +45,13 @@ const MIGRATIONS: string[] = [
     WHERE due_date IS NOT NULL;
   ALTER TABLE tasks DROP COLUMN due_date;
   `,
+
+  // Version 3: remember when a task was completed (for "task done" notifications).
+  // Tasks that are already done get their last update time as a best guess.
+  `
+  ALTER TABLE tasks ADD COLUMN completed_at TEXT;
+  UPDATE tasks SET completed_at = updated_at WHERE status = 'done';
+  `,
 ];
 
 export interface OpenDatabaseOptions {
@@ -143,8 +150,8 @@ function exampleTaskStatements(): InStatement[] {
     const taskId = index + 1;
     return [
       {
-        sql: `INSERT INTO tasks (id, title, status, priority, tag, start_at, due_at, position)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        sql: `INSERT INTO tasks (id, title, status, priority, tag, start_at, due_at, position, completed_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         args: [
           taskId,
           example.title,
@@ -154,6 +161,8 @@ function exampleTaskStatements(): InStatement[] {
           daysFromToday(example.start, 9),
           daysFromToday(example.due, 17),
           index,
+          // Finished examples were "completed" at noon on their due day.
+          example.status === "done" ? daysFromToday(example.due, 12) : null,
         ],
       },
       ...example.subtasks.map(([title, done], position) => ({

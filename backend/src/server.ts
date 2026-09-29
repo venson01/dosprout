@@ -4,8 +4,9 @@ import { buildApp } from "./build-app.js";
 const port = Number(process.env.PORT ?? 4000);
 const host = process.env.HOST ?? "localhost";
 // A local file by default. On Vercel, set these to your Turso database's URL and token.
-const databaseUrl = process.env.TURSO_DATABASE_URL ?? "file:data/todos.db";
-const databaseAuthToken = process.env.TURSO_AUTH_TOKEN;
+// "||" (not "??") so that an empty line like TURSO_DATABASE_URL= also means "use the default".
+const databaseUrl = process.env.TURSO_DATABASE_URL || "file:data/todos.db";
+const databaseAuthToken = process.env.TURSO_AUTH_TOKEN || undefined;
 const corsOrigin = (process.env.CORS_ORIGIN ?? "http://localhost:3000")
   .split(",")
   .map((origin) => origin.trim());

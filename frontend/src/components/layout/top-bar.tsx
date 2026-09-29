@@ -3,6 +3,7 @@
 import { Menu, Search } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
+import { Notifications } from "./notifications";
 
 export function TopBar({ onOpenMenu }: { onOpenMenu: () => void }) {
   const pathname = usePathname();
@@ -25,6 +26,7 @@ export function TopBar({ onOpenMenu }: { onOpenMenu: () => void }) {
       </Suspense>
 
       <div className="ml-auto flex items-center gap-3">
+        <Notifications />
         <div
           aria-hidden
           className="grid size-9 place-items-center rounded-full bg-brand-soft text-sm font-semibold text-brand"

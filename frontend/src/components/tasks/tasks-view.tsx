@@ -4,8 +4,7 @@ import { ArrowUpDown, Check, CircleAlert, Plus, X } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useDismiss } from "@/hooks/use-dismiss";
-import { useOverdueRefresh } from "@/hooks/use-overdue-refresh";
-import { useTasks } from "@/hooks/use-tasks";
+import { useTaskList } from "@/hooks/tasks-context";
 import { API_URL } from "@/lib/api";
 import { matchesSearch, SORT_LABELS, sortTasks, type SortMode } from "@/lib/task-helpers";
 import { STATUSES, type Status, type Task } from "@/lib/types";
@@ -24,12 +23,10 @@ export function TasksView() {
   const query = searchParams.get("q") ?? "";
   const view: View = searchParams.get("view") === "board" ? "board" : "list";
 
-  const { tasks, loadState, loadError, reload, updateTask, deleteTask, saveTask } = useTasks();
+  const { tasks, loadState, loadError, reload, updateTask, deleteTask, saveTask } = useTaskList();
   const [sortMode, setSortMode] = useState<SortMode>("manual");
   const [editor, setEditor] = useState<EditorState>(null);
   const [toast, setToast] = useState<string | null>(null);
-  // Due dates turn red the moment they pass, without a page reload.
-  useOverdueRefresh(tasks);
 
   // Hide the error message after a few seconds.
   useEffect(() => {

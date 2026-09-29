@@ -21,6 +21,7 @@ interface TaskRow {
   position: number;
   created_at: string;
   updated_at: string;
+  completed_at: string | null;
 }
 
 interface SubtaskRow {
@@ -54,6 +55,7 @@ function toTask(row: TaskRow, subtasks: Subtask[]): Task {
     position: row.position,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    completedAt: row.completed_at,
     subtasks,
   };
 }
@@ -148,8 +150,8 @@ export class TaskStore {
     const [taskResult] = await this.db.batch(
       [
         {
-          sql: `INSERT INTO tasks (title, description, status, priority, tag, start_at, due_at, position)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ${NEXT_TASK_POSITION})`,
+          sql: `INSERT INTO tasks (title, description, status, priority, tag, start_at, due_at, position, completed_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ${NEXT_TASK_POSITION}, ${status === "done" ? NOW : "NULL"})`,
           args: [
             input.title.trim(),
             input.description?.trim() ?? "",
@@ -189,10 +191,14 @@ export class TaskStore {
         args.push(typeof value === "string" ? value.trim() : value);
       }
     }
-    // Moving a task to another column without a position puts it at the bottom.
-    if (input.status && input.status !== existing.status && input.position === undefined) {
-      assignments.push(`position = ${NEXT_TASK_POSITION}`);
-      args.push(input.status);
+    if (input.status && input.status !== existing.status) {
+      // Moving a task to another column without a position puts it at the bottom.
+      if (input.position === undefined) {
+        assignments.push(`position = ${NEXT_TASK_POSITION}`);
+        args.push(input.status);
+      }
+      // Remember when it was finished; forget it again if it's reopened.
+      assignments.push(`completed_at = ${input.status === "done" ? NOW : "NULL"}`);
     }
 
     if (assignments.length > 0) {

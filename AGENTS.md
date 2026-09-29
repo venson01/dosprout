@@ -55,12 +55,18 @@ backend/src/
   task-store.ts      TaskStore class: ALL SQL lives here
   routes/tasks.ts    HTTP routes + JSON-schema validation
   types.ts           API data types (source of truth)
+  copy-tasks.ts      copyTasks(): copies all tasks between two databases (keeps ids)
+  scripts/copy-to-turso.ts  `npm run copy-to-turso`: local file -> Turso database in backend/.env
   app.test.ts        API tests using an in-memory database
 frontend/src/
   app/               pages: /tasks (main), /[section] (coming-soon pages), layout.tsx
-  components/layout/ AppShell, Sidebar, TopBar (search box)
+  components/layout/ AppShell, Sidebar, TopBar (search box), Notifications (bell + pop-ups)
   components/tasks/  TasksView (page logic), ListView, BoardView, TaskDialog, TaskMenu, badges
   hooks/use-tasks.ts loads tasks + create/update/delete, with optimistic updates
+  hooks/tasks-context.tsx  TasksProvider (in AppShell) shares useTasks() + a clock app-wide;
+                     components read it with useTaskList()
+  hooks/use-clock.ts wakes up exactly when the next start/reminder/due moment arrives
+  lib/notifications.ts works out notifications from the tasks (see below)
   lib/api.ts         fetch wrapper for the backend
   lib/types.ts       copy of backend/src/types.ts
   lib/task-helpers.ts labels, sorting, search, date formatting
@@ -92,6 +98,16 @@ Data model:
   The browser shows them in the viewer's local time. `toDateAndTime` / `fromDateAndTime` in
   `frontend/src/lib/task-helpers.ts` convert between timestamps and the dialog's date and time inputs.
   A task is overdue when `dueAt` has passed and it isn't done.
+- `completedAt`: set by the server when a task moves to `done`, cleared when it leaves `done`.
+- Notifications are not stored. `notificationsFromTasks` derives them from the tasks: "started" at
+  `startAt`, "due tomorrow" 24 hours before `dueAt`, and "done" at `completedAt`. Starts and reminders
+  only count if they fall after `createdAt` and before `completedAt`. Which ones are read is kept in
+  the browser's localStorage (`use-notifications-read-at.ts`). Pop-ups only appear for events that
+  happen while the app is open.
+- Desktop notifications (`use-desktop-notifications.ts`) use the browser's Notification API. They're
+  turned on from the bell's list (browsers only ask for permission after a click), and are sent only
+  while a DoSprout tab is open but you're looking elsewhere. Notifying while the browser is closed
+  would need web push (service worker + server job) and isn't built.
 - `position`: order within a status column. Changing status without a position moves the task to the bottom.
 - Subtask routes return the whole parent task so the frontend can just swap it in.
 - Subtasks drive the status: after any subtask change, all done → `done`, some done → `in_progress`,

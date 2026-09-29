@@ -10,7 +10,10 @@ Features:
 - **List view** and **Board view**. On the board you can drag cards between columns.
 - Tags (Work, Health, ...) and priorities (High / Mid / Low)
 - Start and due dates, each with a time. Overdue tasks turn red.
-- **Subtasks** with a progress bar
+- **Subtasks** with a progress bar. Ticking them moves the task to In Progress / Done.
+- **Notifications** (the bell at the top): when a task starts, a day before it's due, and when it's done.
+  Overdue tasks turn red. Turn on **desktop notifications** in the bell's list to get them
+  while you're in another tab or app (DoSprout needs to stay open in a tab).
 - Search, and sorting by start date, due date or priority
 - Works on phones, tablets and desktops
 
@@ -91,6 +94,16 @@ Before you start, push this repository to GitHub.
 1. Sign up at [turso.tech](https://turso.tech) and create a database (for example `todos`).
 2. Copy its **URL**. It looks like `libsql://todos-yourname.turso.io`.
 3. Create a **token** for it and copy that too. Treat the token like a password.
+
+**Optional: move your local tasks to Turso.** Put the URL and token in `backend/.env`
+(copy `backend/.env.example`), then run:
+
+```bash
+npm run copy-to-turso
+```
+
+If Turso already has tasks (e.g. the example tasks), it stops without changing anything.
+Run `npm run copy-to-turso -- --replace` to delete those and copy yours instead.
 
 **2. Deploy the backend**
 
