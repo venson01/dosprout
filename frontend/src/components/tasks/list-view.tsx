@@ -2,9 +2,10 @@
 
 import { Check, ChevronDown, Plus } from "lucide-react";
 import { useState } from "react";
+import { useTaskList } from "@/hooks/tasks-context";
 import { hasUnfinishedSubtasks, isOverdue, STATUS_LABELS } from "@/lib/task-helpers";
 import { STATUSES, type Status, type Task } from "@/lib/types";
-import { OverdueBadge, PriorityBadge, TagBadge, TaskDate } from "./badges";
+import { GoalBadge, OverdueBadge, PriorityBadge, TagBadge, TaskDate } from "./badges";
 import type { TaskActions, TaskGroups } from "./task-actions";
 import { TaskMenu } from "./task-menu";
 
@@ -95,6 +96,8 @@ function TaskRow({ task, actions }: { task: Task; actions: TaskActions }) {
   // Can't be ticked until every subtask is (clicking it explains why).
   const blocked = !done && hasUnfinishedSubtasks(task);
   const overdue = isOverdue(task);
+  const { goals } = useTaskList();
+  const goal = goals.find((g) => g.id === task.goalId);
   const finished = task.subtasks.filter((s) => s.done).length;
 
   return (
@@ -137,9 +140,14 @@ function TaskRow({ task, actions }: { task: Task; actions: TaskActions }) {
             </button>
             {overdue && <OverdueBadge />}
           </div>
-          {task.subtasks.length > 0 && (
-            <p className="text-xs text-muted">
-              {finished}/{task.subtasks.length} subtasks
+          {(task.subtasks.length > 0 || goal) && (
+            <p className="flex flex-wrap items-center gap-x-3 text-xs text-muted">
+              {task.subtasks.length > 0 && (
+                <span>
+                  {finished}/{task.subtasks.length} subtasks
+                </span>
+              )}
+              {goal && <GoalBadge goal={goal} />}
             </p>
           )}
           {/* Below xl the extra columns are shown under the title instead. */}

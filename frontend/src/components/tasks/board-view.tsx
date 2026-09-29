@@ -16,9 +16,10 @@ import {
 } from "@dnd-kit/core";
 import { Plus } from "lucide-react";
 import { useRef, useState } from "react";
+import { useTaskList } from "@/hooks/tasks-context";
 import { isOverdue, STATUS_LABELS } from "@/lib/task-helpers";
 import { STATUSES, type Status, type Task } from "@/lib/types";
-import { OverdueBadge, PriorityBadge, TagBadge, TaskDate } from "./badges";
+import { GoalBadge, OverdueBadge, PriorityBadge, TagBadge, TaskDate } from "./badges";
 import type { TaskActions, TaskGroups } from "./task-actions";
 import { TaskMenu } from "./task-menu";
 
@@ -211,6 +212,8 @@ function CardBody({
   menu?: React.ReactNode;
   className?: string;
 }) {
+  const { goals } = useTaskList();
+  const goal = goals.find((g) => g.id === task.goalId);
   const total = task.subtasks.length;
   const finished = task.subtasks.filter((s) => s.done).length;
   const percent = total === 0 ? 0 : Math.round((finished / total) * 100);
@@ -231,6 +234,11 @@ function CardBody({
         </h3>
         {menu}
       </div>
+      {goal && (
+        <div className="mt-1">
+          <GoalBadge goal={goal} />
+        </div>
+      )}
 
       {total > 0 && (
         <div className="mt-2.5">

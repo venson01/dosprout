@@ -52,6 +52,21 @@ const MIGRATIONS: string[] = [
   ALTER TABLE tasks ADD COLUMN completed_at TEXT;
   UPDATE tasks SET completed_at = updated_at WHERE status = 'done';
   `,
+
+  // Version 4: goals. A task can belong to one goal (tasks.goal_id).
+  // Deleting a goal unlinks its tasks (see GoalStore.delete).
+  `
+  CREATE TABLE goals (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    title       TEXT    NOT NULL,
+    description TEXT    NOT NULL DEFAULT '',
+    color       TEXT    NOT NULL DEFAULT 'blue',
+    target_date TEXT,
+    created_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+  );
+  ALTER TABLE tasks ADD COLUMN goal_id INTEGER;
+  `,
 ];
 
 export interface OpenDatabaseOptions {
@@ -148,28 +163,44 @@ function daysFromToday(days: number, hour: number): string {
   return date.toISOString();
 }
 
+/** A local day a number of days from today, as "2026-10-13" (for goal target dates). */
+function dayFromToday(days: number): string {
+  return daysFromToday(days, 12).slice(0, 10);
+}
+
 // Example data so the app doesn't look empty the first time you open it.
-// The database is brand new here, so we can choose the task ids ourselves.
+// The database is brand new here, so we can choose the ids ourselves.
 function exampleTaskStatements(): InStatement[] {
+  // One example goal; the three work tasks belong to it (goal: 1).
+  const goal: InStatement = {
+    sql: "INSERT INTO goals (id, title, description, color, target_date) VALUES (?, ?, ?, ?, ?)",
+    args: [
+      1,
+      "Launch the new website",
+      "Everything needed before the site goes live.",
+      "blue",
+      dayFromToday(14),
+    ],
+  };
   const examples = [
-    { title: "Website Development", status: "todo", priority: "high", tag: "Work", start: 1, due: 2,
+    { title: "Website Development", status: "todo", priority: "high", tag: "Work", start: 1, due: 2, goal: 1,
       subtasks: [["Wireframes", 0], ["Build landing page", 0], ["Connect API", 0], ["Deploy", 0]] },
-    { title: "Update Contact Form", status: "todo", priority: "mid", tag: "Work", start: 2, due: 3,
+    { title: "Update Contact Form", status: "todo", priority: "mid", tag: "Work", start: 2, due: 3, goal: 1,
       subtasks: [["Add phone field", 0], ["Validate email", 0]] },
-    { title: "Do back exercises", status: "in_progress", priority: "mid", tag: "Health", start: 0, due: 2,
+    { title: "Do back exercises", status: "in_progress", priority: "mid", tag: "Health", start: 0, due: 2, goal: null,
       subtasks: [["Stretch", 1], ["Plank", 1], ["Bridges", 0]] },
-    { title: "Integrate Payment Gateway", status: "in_progress", priority: "low", tag: "Work", start: -1, due: 2,
+    { title: "Integrate Payment Gateway", status: "in_progress", priority: "low", tag: "Work", start: -1, due: 2, goal: 1,
       subtasks: [["Create sandbox account", 1], ["Checkout page", 1], ["Webhooks", 0]] },
-    { title: "Visit a dermatologist", status: "done", priority: "high", tag: "Health", start: -2, due: -1,
+    { title: "Visit a dermatologist", status: "done", priority: "high", tag: "Health", start: -2, due: -1, goal: null,
       subtasks: [["Book appointment", 1]] },
   ] as const;
 
-  return examples.flatMap((example, index) => {
+  return [goal, ...examples.flatMap((example, index) => {
     const taskId = index + 1;
     return [
       {
-        sql: `INSERT INTO tasks (id, title, status, priority, tag, start_at, due_at, position, completed_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        sql: `INSERT INTO tasks (id, title, status, priority, tag, start_at, due_at, position, completed_at, goal_id)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         args: [
           taskId,
           example.title,
@@ -181,6 +212,7 @@ function exampleTaskStatements(): InStatement[] {
           index,
           // Finished examples were "completed" at noon on their due day.
           example.status === "done" ? daysFromToday(example.due, 12) : null,
+          example.goal,
         ],
       },
       ...example.subtasks.map(([title, done], position) => ({
@@ -188,5 +220,5 @@ function exampleTaskStatements(): InStatement[] {
         args: [taskId, title, done, position],
       })),
     ];
-  });
+  })];
 }

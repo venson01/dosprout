@@ -6,7 +6,6 @@ import { notFound } from "next/navigation";
 // Sidebar pages that aren't built yet. Add a real page folder (e.g. app/goals/page.tsx)
 // and remove the name from this list when you build one.
 const SECTIONS: Record<string, string> = {
-  goals: "Goals",
   time: "Time",
   settings: "Settings",
 };

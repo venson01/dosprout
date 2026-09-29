@@ -18,7 +18,8 @@ import {
   type Period,
 } from "@/lib/dashboard";
 import { PRIORITY_LABELS } from "@/lib/task-helpers";
-import type { Priority, Task } from "@/lib/types";
+import { GOAL_COLOR_CLASSES, goalProgress, sortGoals, targetStatus } from "@/lib/goals";
+import type { Goal, Priority, Task } from "@/lib/types";
 
 const PRIORITY_FILL: Record<Priority, string> = { high: "bg-high", mid: "bg-mid", low: "bg-low" };
 
@@ -33,7 +34,7 @@ const clock = (timestamp: string) =>
  * out from the tasks the app already loaded (see lib/dashboard.ts).
  */
 export function DashboardView() {
-  const { tasks, loadState, loadError, reload, deleteTask, saveTask, now } = useTaskList();
+  const { tasks, goals, loadState, loadError, reload, deleteTask, saveTask, now } = useTaskList();
   const [editing, setEditing] = useState<Task | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const dismissToast = useCallback(() => setToast(null), []);
@@ -89,6 +90,7 @@ export function DashboardView() {
               rows={openByTag(tasks).map(({ tag, count }) => ({ label: tag, count, fill: "bg-tag" }))}
             />
           </div>
+          <GoalsSummary goals={goals} tasks={tasks} now={now} delay={7 * STAGGER_MS} />
         </div>
       )}
 
@@ -109,20 +111,23 @@ export function DashboardView() {
   );
 }
 
-// Card effects (the 5 top cards and the two "Open tasks by ..." cards): "animate-card-in"
-// fades a card in (see globals.css); on hover it lifts a little and gets a shadow and a
-// blue border. "motion-reduce:" turns the movement off for people who asked their
+// Card effects. "motion-reduce:" turns the movement off for people who asked their
 // device for less motion.
-const CARD_MOTION =
-  "animate-card-in transition duration-200 " +
-  "hover:-translate-y-1 hover:border-brand hover:shadow-lg hover:shadow-brand/10 " +
-  "motion-reduce:animate-none motion-reduce:transition-none motion-reduce:hover:translate-y-0";
+// Fade in while sliding up (see globals.css). Used by the 5 top cards and the two
+// "Open tasks by ..." cards.
+const CARD_ENTRANCE = "animate-card-in motion-reduce:animate-none";
 
-/** The top cards are links, so they also need a focus ring. */
+/**
+ * The 5 top cards are links: on hover they also lift a little and get a shadow and a
+ * blue border, and they need a focus ring. (Only clickable cards lift, so the two
+ * "Open tasks by ..." cards don't.)
+ */
 const CARD_EFFECTS =
-  "group block rounded-xl border border-line bg-white outline-none " +
+  "group block rounded-xl border border-line bg-white outline-none transition duration-200 " +
+  "hover:-translate-y-1 hover:border-brand hover:shadow-lg hover:shadow-brand/10 " +
   "focus-visible:ring-2 focus-visible:ring-brand " +
-  CARD_MOTION;
+  "motion-reduce:transition-none motion-reduce:hover:translate-y-0 " +
+  CARD_ENTRANCE;
 
 /** Cards come in one after another, this far apart. */
 const STAGGER_MS = 80;
@@ -139,7 +144,7 @@ function Card({
   title: string;
   aside?: React.ReactNode;
   id?: string;
-  /** Extra classes, e.g. CARD_MOTION. */
+  /** Extra classes, e.g. CARD_ENTRANCE. */
   className?: string;
   /** How long to wait before the fade-in animation starts, in milliseconds. */
   delay?: number;
@@ -454,8 +459,9 @@ function CompletedChart({ tasks, now }: { tasks: Task[]; now: number }) {
 }
 
 /**
- * Horizontal bars: one row per group with its label and count. Same effects as the
- * top cards: it fades in, the numbers count up and the bars grow in one after another.
+ * Horizontal bars: one row per group with its label and count. It fades in like the
+ * top cards, the numbers count up and the bars grow in one after another. It isn't
+ * clickable, so unlike the top cards it doesn't lift on hover.
  */
 function Breakdown({
   title,
@@ -481,7 +487,7 @@ function Breakdown({
           <span className="sr-only">{total}</span> open
         </>
       }
-      className={CARD_MOTION}
+      className={CARD_ENTRANCE}
       delay={delay}
     >
       {total === 0 ? (
@@ -535,6 +541,78 @@ function BreakdownRow({
         <span aria-hidden>{shown}</span>
         <span className="sr-only">{count}</span>
       </span>
+    </li>
+  );
+}
+
+/** Each goal with its progress bar. Every goal links to its card on the Goals page. */
+function GoalsSummary({ goals, tasks, now, delay }: { goals: Goal[]; tasks: Task[]; now: number; delay: number }) {
+  return (
+    <Card
+      title="Goals"
+      aside={
+        <Link href="/goals" className="font-medium text-brand hover:underline">
+          See all
+        </Link>
+      }
+      className={CARD_ENTRANCE}
+      delay={delay}
+    >
+      {goals.length === 0 ? (
+        <p className="py-4 text-center text-sm text-muted">
+          No goals yet.{" "}
+          <Link href="/goals" className="font-medium text-brand hover:underline">
+            Create one
+          </Link>{" "}
+          to track something bigger than a single task.
+        </p>
+      ) : (
+        <ul className="grid gap-x-8 gap-y-3 md:grid-cols-2">
+          {sortGoals(goals, tasks).map((goal, index) => (
+            <GoalSummaryRow key={goal.id} goal={goal} tasks={tasks} now={now} delay={delay + 150 + index * 60} />
+          ))}
+        </ul>
+      )}
+    </Card>
+  );
+}
+
+function GoalSummaryRow({ goal, tasks, now, delay }: { goal: Goal; tasks: Task[]; now: number; delay: number }) {
+  const progress = goalProgress(goal, tasks);
+  const target = targetStatus(goal, progress.complete, now);
+  const percent = useCountUp(progress.percent);
+
+  return (
+    <li>
+      <Link
+        href={`/goals#goal-${goal.id}`}
+        className="-m-2 block rounded-lg p-2 outline-none hover:bg-page focus-visible:ring-2 focus-visible:ring-brand"
+      >
+        <span className="flex items-center justify-between gap-3 text-sm">
+          <span className="flex min-w-0 items-center gap-2">
+            <span aria-hidden className={`size-2.5 shrink-0 rounded-full ${GOAL_COLOR_CLASSES[goal.color].fill}`} />
+            <span className="truncate font-medium">{goal.title}</span>
+          </span>
+          <span className="shrink-0 font-medium tabular-nums">
+            <span aria-hidden>{percent}%</span>
+            <span className="sr-only">{progress.percent}% done</span>
+          </span>
+        </span>
+        <span aria-hidden className="mt-2 block h-2 overflow-hidden rounded-full bg-page">
+          <span
+            className={`block h-full origin-left animate-bar-grow rounded-full transition-[width] duration-700 motion-reduce:animate-none motion-reduce:transition-none ${GOAL_COLOR_CLASSES[goal.color].fill}`}
+            style={{ width: `${progress.percent}%`, animationDelay: `${delay}ms` }}
+          />
+        </span>
+        <span className="mt-1 block text-xs text-muted">
+          {progress.complete
+            ? "Goal reached"
+            : `${progress.done} of ${progress.total} ${progress.total === 1 ? "task" : "tasks"}`}
+          {target && !progress.complete && (
+            <span className={target.late ? "font-medium text-high" : ""}> · {target.text}</span>
+          )}
+        </span>
+      </Link>
     </li>
   );
 }

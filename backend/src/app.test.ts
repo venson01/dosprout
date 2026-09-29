@@ -9,7 +9,8 @@ import { buildApp } from "./build-app.js";
 import { copyTasks, TargetNotEmptyError } from "./copy-tasks.js";
 import { openDatabase } from "./db.js";
 import { TaskStore } from "./task-store.js";
-import type { Task } from "./types.js";
+import { GoalStore } from "./goal-store.js";
+import type { Goal, Task } from "./types.js";
 
 // Every test gets a fresh, empty in-memory database.
 let app: FastifyInstance;
@@ -302,6 +303,87 @@ describe("tasks API", () => {
   });
 });
 
+describe("goals API", () => {
+  async function createGoal(body: Record<string, unknown>): Promise<Goal> {
+    const response = await app.inject({ method: "POST", url: "/api/goals", payload: body });
+    assert.equal(response.statusCode, 201, response.body);
+    return response.json();
+  }
+
+  test("creates, lists, updates and deletes goals", async () => {
+    const goal = await createGoal({ title: "  Get fit  ", targetDate: "2026-12-31" });
+    assert.equal(goal.title, "Get fit");
+    assert.equal(goal.description, "");
+    assert.equal(goal.color, "blue");
+    assert.equal(goal.targetDate, "2026-12-31");
+
+    const list = await app.inject({ method: "GET", url: "/api/goals" });
+    assert.deepEqual(
+      (list.json() as Goal[]).map((g) => g.title),
+      ["Get fit"],
+    );
+
+    const url = `/api/goals/${goal.id}`;
+    const updated = await app.inject({
+      method: "PATCH",
+      url,
+      payload: { color: "aqua", description: "Run 5k", targetDate: null },
+    });
+    assert.equal(updated.statusCode, 200);
+    assert.deepEqual(
+      [(updated.json() as Goal).color, (updated.json() as Goal).description, (updated.json() as Goal).targetDate],
+      ["aqua", "Run 5k", null],
+    );
+
+    const deleted = await app.inject({ method: "DELETE", url });
+    assert.equal(deleted.statusCode, 204);
+    assert.equal((await app.inject({ method: "GET", url })).statusCode, 404);
+  });
+
+  test("rejects invalid goals", async () => {
+    for (const payload of [
+      {},
+      { title: "   " },
+      { title: "x", color: "rainbow" },
+      { title: "x", targetDate: "next week" },
+      { title: "x", targetDate: "2026-12-31T10:00:00Z" },
+    ]) {
+      const response = await app.inject({ method: "POST", url: "/api/goals", payload });
+      assert.equal(response.statusCode, 400, JSON.stringify(payload));
+    }
+  });
+
+  test("tasks can belong to a goal, and deleting the goal keeps its tasks", async () => {
+    const goal = await createGoal({ title: "Move house" });
+    const task = await createTask({ title: "Pack boxes", goalId: goal.id });
+    assert.equal(task.goalId, goal.id);
+
+    // Unlink and link again with PATCH.
+    const unlinked = await app.inject({ method: "PATCH", url: `/api/tasks/${task.id}`, payload: { goalId: null } });
+    assert.equal((unlinked.json() as Task).goalId, null);
+    await app.inject({ method: "PATCH", url: `/api/tasks/${task.id}`, payload: { goalId: goal.id } });
+
+    await app.inject({ method: "DELETE", url: `/api/goals/${goal.id}` });
+    const after = await app.inject({ method: "GET", url: `/api/tasks/${task.id}` });
+    assert.equal(after.statusCode, 200, "the task still exists");
+    assert.equal((after.json() as Task).goalId, null, "and no longer points at the deleted goal");
+  });
+
+  test("a task can't point at a goal that doesn't exist", async () => {
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/tasks",
+      payload: { title: "Orphan", goalId: 999 },
+    });
+    assert.equal(created.statusCode, 400);
+    assert.match(created.json().message, /goal doesn't exist/);
+
+    const task = await createTask({ title: "Plain" });
+    const patched = await app.inject({ method: "PATCH", url: `/api/tasks/${task.id}`, payload: { goalId: 999 } });
+    assert.equal(patched.statusCode, 400);
+  });
+});
+
 describe("copying tasks to another database", () => {
   test("copies every task and subtask exactly, and refuses to overwrite unless asked", async () => {
     const from = await openDatabase({ url: ":memory:", seed: true });
@@ -316,6 +398,9 @@ describe("copying tasks to another database", () => {
     assert.equal(result.tasks, 6);
     const toStore = new TaskStore(to);
     assert.deepEqual(await toStore.list(), await fromStore.list());
+    // Goals come along too (the example data has one, linked to three tasks).
+    assert.equal(result.goals, 1);
+    assert.deepEqual(await new GoalStore(to).list(), await new GoalStore(from).list());
 
     // New tasks in the target don't reuse the copied ids.
     const next = await toStore.create({ title: "After the copy" });

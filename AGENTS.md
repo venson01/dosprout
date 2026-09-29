@@ -10,8 +10,8 @@ Humans should start with [README.md](README.md).
 - The owner is a **beginner**. Keep code simple and readable, prefer plain solutions over clever ones,
   add short comments that explain *why*, and explain your changes in plain language.
   Don't add new libraries unless they clearly pay for themselves, and say why when you do.
-- Pages: **Dashboard**, **Tasks** (list + board), **Calendar**, and "Coming soon" placeholders
-  for the rest (Goals, Time, Settings).
+- Pages: **Dashboard**, **Tasks** (list + board), **Goals**, **Calendar**, and "Coming soon"
+  placeholders for the rest (Time, Settings).
   There is no login: everyone using the same backend shares one task list.
 
 ## Stack
@@ -72,25 +72,28 @@ backend/src/
   build-app.ts       buildApp(): creates Fastify, CORS, routes (used by tests too). Not named
                      app.ts because Vercel would treat src/app.ts as the server entry point.
   db.ts              connect() + openDatabase(): runs MIGRATIONS, seeds example tasks on first run
-  task-store.ts      TaskStore class: ALL SQL lives here (+ statusFromSubtasks, hasUnfinishedSubtasks)
-  routes/tasks.ts    HTTP routes + JSON-schema validation
+  task-store.ts      TaskStore class: all task SQL (+ statusFromSubtasks, hasUnfinishedSubtasks, NOW)
+  goal-store.ts      GoalStore class: all goal SQL
+  routes/tasks.ts    task HTTP routes + JSON-schema validation
+  routes/goals.ts    goal HTTP routes + JSON-schema validation
   types.ts           API data types (source of truth)
-  copy-tasks.ts      copyTasks(): copies all tasks between two databases (keeps ids)
+  copy-tasks.ts      copyTasks(): copies all tasks, subtasks and goals between two databases (keeps ids)
   scripts/copy-to-turso.ts  `npm run copy-to-turso`: local file -> Turso database in backend/.env
   app.test.ts        API tests using an in-memory database
 frontend/
   next.config.ts     forwards /api to the backend while developing (not on Vercel)
 frontend/src/
-  app/               pages: / (redirects to /tasks), /dashboard, /tasks, /calendar,
+  app/               pages: / (redirects to /tasks), /dashboard, /tasks, /goals, /calendar,
                      /[section] (coming-soon pages), layout.tsx
   components/layout/ AppShell, Sidebar, TopBar (search box), Notifications (bell, list, pop-ups)
   components/tasks/  TasksView (page logic), ListView, BoardView, TaskDialog, TaskMenu, badges,
                      task-actions (types), feedback (ErrorToast, LoadError, LoadingSkeleton;
                      shared with the calendar)
   components/calendar/ CalendarView: month grid, task bars from start day to due day, drag to move
+  components/goals/  GoalsView (one card per goal: progress, target date, its tasks), GoalDialog
   components/dashboard/ DashboardView: summary cards, needs attention, completed-per-day chart,
                      open tasks by priority / tag
-  hooks/use-tasks.ts loads tasks + create/update/delete, with optimistic updates
+  hooks/use-tasks.ts loads tasks AND goals; create/update/delete for both (optimistic for tasks)
   hooks/tasks-context.tsx  TasksProvider (in AppShell) shares useTasks() + a clock app-wide;
                      components read it with useTaskList()
   hooks/use-clock.ts wakes up exactly when the next start/reminder/due moment arrives
@@ -105,6 +108,7 @@ frontend/src/
   lib/notifications.ts works out notifications from the tasks (see below)
   lib/calendar.ts    local-day helpers: monthWeeks, taskDays, weekBars (bar rows), shiftTimestamp
   lib/dashboard.ts   the Dashboard's numbers: summarize, needsAttention, completedPer, openBy*
+  lib/goals.ts       goal colors (GOAL_COLOR_CLASSES), goalProgress, targetStatus, sortGoals
 ```
 
 ## API
@@ -123,9 +127,15 @@ Base URL `/api` (locally also `http://localhost:4000/api`). JSON in and out. Err
 | POST   | `/tasks/:id/subtasks`                | `{ title }`                                       | parent `Task` (201) |
 | PATCH  | `/tasks/:id/subtasks/:subtaskId`     | `{ title?, done? }`                               | parent `Task`    |
 | DELETE | `/tasks/:id/subtasks/:subtaskId`     |                                                   | parent `Task`    |
+| GET    | `/goals`                             |                                                   | `Goal[]`         |
+| GET    | `/goals/:id`                         |                                                   | `Goal`           |
+| POST   | `/goals`                             | `title` (required), `description`, `color`, `targetDate` | `Goal` (201) |
+| PATCH  | `/goals/:id`                         | any goal field                                    | `Goal`           |
+| DELETE | `/goals/:id`                         | (its tasks are kept, with `goalId` set to null)   | 204              |
 
-400 errors, besides invalid bodies: `dueAt` earlier than `startAt`, and `status: "done"` while the
-task has unfinished subtasks (on POST: `status: "done"` together with `subtasks`).
+400 errors, besides invalid bodies: `dueAt` earlier than `startAt`, `status: "done"` while the
+task has unfinished subtasks (on POST: `status: "done"` together with `subtasks`), and a `goalId`
+that doesn't match a goal.
 
 Data model:
 - `status`: `"todo" | "in_progress" | "done"`. `priority`: `"low" | "mid" | "high"`.
@@ -138,6 +148,11 @@ Data model:
   A task is overdue when `dueAt` has passed and it isn't done; it then shows red with an Overdue label.
 - `completedAt`: set by the server when a task moves to `done`, cleared when it leaves `done`.
 - `position`: order within a status column. Changing status without a position moves the task to the bottom.
+- `goalId`: the goal a task belongs to (one at most), or `null`.
+- **Goals** (`Goal`): `title`, `description`, `color` (one of `GOAL_COLORS`), `targetDate` (a day,
+  `"2026-12-31"`, no time; or `null`). A goal's progress is NOT stored: it's the share of its tasks
+  that are done (`goalProgress` in `lib/goals.ts`). "Reached" = it has tasks and all are done;
+  "late" = the target day has passed and it isn't reached.
 - Subtask routes return the whole parent task so the frontend can just swap it in.
 - **Subtasks drive the status:** after any subtask change, all done → `done`, some done → `in_progress`,
   none done → `todo` if it was `done`. `statusFromSubtasks` in `task-store.ts` has a copy in
@@ -183,19 +198,29 @@ Data model:
   so the page is wrapped in `<Suspense>`. Chart rules followed here: one series so no legend,
   columns at most 24px wide and rounded only at the top, a number only on the busiest column
   (hover shows the rest), text in text colors (never the bar color), and a screen-reader table.
-- The 5 top cards and the two "Open tasks by ..." cards have effects (`CARD_MOTION` in
-  `dashboard-view.tsx`; the top cards use `CARD_EFFECTS`, which adds link styles). They fade and
-  slide in one after another (`animate-card-in`,
-  defined with its keyframes in `globals.css`), their numbers count up (`useCountUp`), the progress
-  bar and the breakdown bars grow in (`animate-bar-grow`, row after row), and on hover they lift
-  with a shadow and a blue border.
-  Every effect is switched off by the system's "reduce motion" setting (`motion-reduce:` classes,
-  and `useCountUp` checks it too). The cards' `aria-label`s hold the final numbers for screen readers.
-  `card-in` uses `backwards` fill mode on purpose: `both` would keep holding `transform` after the
-  animation and block the hover lift.
+- Dashboard card effects (`dashboard-view.tsx`): all 7 cards fade and slide in one after another
+  (`CARD_ENTRANCE` = `animate-card-in`, defined with its keyframes in `globals.css`), their numbers
+  count up (`useCountUp`), and the progress bar and breakdown bars grow in (`animate-bar-grow`,
+  row after row). Only the 5 top cards lift on hover with a shadow and a blue border
+  (`CARD_EFFECTS`), because they're links; the two "Open tasks by ..." cards aren't clickable,
+  so they must not lift. Every effect is switched off by the system's "reduce motion" setting
+  (`motion-reduce:` classes, and `useCountUp` checks it too). Screen readers get the final numbers
+  (`aria-label`s / `sr-only` text). `card-in` uses `backwards` fill mode on purpose: `both` would
+  keep holding `transform` after the animation and block the hover lift.
 - The "Tasks done" card links to `/tasks`. Status cards link to the Tasks list sections (`/tasks#status-todo`, `#status-in_progress`,
   `#status-done`; the ids are on the sections in `list-view.tsx`). The Overdue card jumps to the
   "Needs attention" card on the same page.
+
+## Goals
+
+- Goal colors: `GOAL_COLORS` = blue, orange, aqua, yellow, magenta, violet, **in that order**. They
+  were checked with the dataviz skill's color-blindness validator (neighbors stay distinct); some are
+  faint on white, so a goal's color is never shown without its name. The tokens are
+  `--color-goal-*` in `globals.css` (blue reuses `--color-brand`).
+- The task editor has a Goal field (it reads the goals with `useTaskList()`); `TaskDialog` takes
+  `defaultGoalId` for "Add task" on a goal's card. Tasks show their goal with `GoalBadge`
+  (list rows and board cards).
+- Goal cards have `id="goal-<id>"`, so the Dashboard's Goals card links to `/goals#goal-3`.
 
 ## Deployed on Vercel (read before changing the backend setup)
 
@@ -227,8 +252,9 @@ Data model:
   Never edit or reorder existing migrations, because people's databases have already run them.
   Statements are split on `;`, so don't put `;` inside text values. The version lives in the
   `schema_version` table (older local databases used `PRAGMA user_version`, which is read once).
-- Keep SQL in `TaskStore`. Keep route handlers thin. Validate every request body with a JSON schema.
-- `TaskStore` methods are `async` (the database may be in the cloud), so `await` them.
+- Keep SQL in the stores (`TaskStore`, `GoalStore`). Keep route handlers thin. Validate every request
+  body with a JSON schema.
+- Store methods are `async` (the database may be in the cloud), so `await` them.
   Writes that must happen together go in one `db.batch([...], "write")`, which is a transaction
   and only one trip to the database.
   Don't rely on `ON DELETE CASCADE`: foreign key checks aren't on, so delete child rows yourself.
@@ -253,7 +279,7 @@ Data model:
 ## Not built yet (possible next steps)
 
 - User accounts and login (the sidebar "Log Out" is disabled, and the top bar shows "Guest").
-- Goals, Time and Settings pages (they currently show "Coming soon").
+- Time and Settings pages (they currently show "Coming soon").
 - Reordering cards within a board column (drag & drop currently only changes the column).
 - Notifications while the browser is closed (web push).
 - File attachments (shown in the moodboard) and dark mode.

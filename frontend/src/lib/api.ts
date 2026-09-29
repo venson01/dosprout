@@ -1,4 +1,11 @@
-import type { CreateTaskInput, Task, UpdateTaskInput } from "./types";
+import type {
+  CreateGoalInput,
+  CreateTaskInput,
+  Goal,
+  Task,
+  UpdateGoalInput,
+  UpdateTaskInput,
+} from "./types";
 
 // The API lives at /api on the same address as the website:
 // - on Vercel, vercel.json sends /api/... to the backend service
@@ -61,4 +68,11 @@ export const api = {
     }),
   deleteSubtask: (taskId: number, subtaskId: number) =>
     request<Task>(`/tasks/${taskId}/subtasks/${subtaskId}`, { method: "DELETE" }),
+
+  listGoals: () => request<Goal[]>("/goals"),
+  createGoal: (input: CreateGoalInput) =>
+    request<Goal>("/goals", { method: "POST", body: json(input) }),
+  updateGoal: (id: number, input: UpdateGoalInput) =>
+    request<Goal>(`/goals/${id}`, { method: "PATCH", body: json(input) }),
+  deleteGoal: (id: number) => request<void>(`/goals/${id}`, { method: "DELETE" }),
 };

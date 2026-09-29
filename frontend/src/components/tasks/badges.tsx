@@ -1,6 +1,7 @@
 import { AlarmClock, CalendarClock, CalendarDays, Flag } from "lucide-react";
 import { formatDateTime, isOverdue, PRIORITY_LABELS } from "@/lib/task-helpers";
-import type { Priority, Task } from "@/lib/types";
+import { GOAL_COLOR_CLASSES } from "@/lib/goals";
+import type { Goal, Priority, Task } from "@/lib/types";
 
 const PRIORITY_STYLES: Record<Priority, string> = {
   high: "bg-high-bg text-high",
@@ -25,6 +26,17 @@ export function PriorityBadge({ priority }: { priority: Priority }) {
       <Flag className="size-3" aria-hidden />
       <span className="sr-only">Priority: </span>
       {PRIORITY_LABELS[priority]}
+    </span>
+  );
+}
+
+/** The goal a task belongs to: a colored dot and the goal's name. */
+export function GoalBadge({ goal }: { goal: Goal }) {
+  return (
+    <span className="inline-flex max-w-40 items-center gap-1.5 text-xs text-muted" title={`Goal: ${goal.title}`}>
+      <span aria-hidden className={`size-2 shrink-0 rounded-full ${GOAL_COLOR_CLASSES[goal.color].fill}`} />
+      <span className="sr-only">Goal: </span>
+      <span className="truncate">{goal.title}</span>
     </span>
   );
 }

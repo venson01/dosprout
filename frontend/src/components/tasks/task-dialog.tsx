@@ -2,6 +2,7 @@
 
 import { Check, Flag, Plus, Trash, X } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
+import { useTaskList } from "@/hooks/tasks-context";
 import type { DraftSubtask, TaskDraft } from "@/hooks/use-tasks";
 import {
   fromDateAndTime,
@@ -21,6 +22,8 @@ interface TaskDialogProps {
   defaultStatus: Status;
   /** Due day for a new task, as "2026-11-17" (e.g. the day clicked in the calendar). */
   defaultDueDate?: string;
+  /** Goal for a new task (e.g. "Add task" on a goal's card). */
+  defaultGoalId?: number;
   onSave: (draft: TaskDraft) => Promise<void>;
   onDelete?: () => void;
   onClose: () => void;
@@ -44,7 +47,12 @@ const DEFAULT_DUE_TIME = "17:00";
 let nextKey = 0;
 const newKey = () => `new-${nextKey++}`;
 
-function draftFromTask(task: Task | null, defaultStatus: Status, defaultDueDate?: string): TaskDraft {
+function draftFromTask(
+  task: Task | null,
+  defaultStatus: Status,
+  defaultDueDate?: string,
+  defaultGoalId?: number,
+): TaskDraft {
   const start = toDateAndTime(task?.startAt ?? null);
   const due =
     !task && defaultDueDate
@@ -60,6 +68,7 @@ function draftFromTask(task: Task | null, defaultStatus: Status, defaultDueDate?
     startTime: start.time,
     dueDate: due.date,
     dueTime: due.time,
+    goalId: task ? task.goalId : (defaultGoalId ?? null),
     subtasks: (task?.subtasks ?? []).map((s) => ({
       key: `id-${s.id}`,
       id: s.id,
@@ -77,13 +86,17 @@ export function TaskDialog({
   task,
   defaultStatus,
   defaultDueDate,
+  defaultGoalId,
   onSave,
   onDelete,
   onClose,
 }: TaskDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const titleRef = useRef<HTMLInputElement>(null);
-  const [draft, setDraft] = useState(() => draftFromTask(task, defaultStatus, defaultDueDate));
+  const [draft, setDraft] = useState(() =>
+    draftFromTask(task, defaultStatus, defaultDueDate, defaultGoalId),
+  );
+  const { goals } = useTaskList();
   const [newSubtask, setNewSubtask] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -269,7 +282,7 @@ export function TaskDialog({
                 })}
               </div>
             </fieldset>
-            <div className="sm:col-span-2">
+            <div>
               <label htmlFor={`${ids}-tag`} className="mb-1 block text-sm font-medium">
                 Tag
               </label>
@@ -287,6 +300,24 @@ export function TaskDialog({
                   <option key={tag} value={tag} />
                 ))}
               </datalist>
+            </div>
+            <div>
+              <label htmlFor={`${ids}-goal`} className="mb-1 block text-sm font-medium">
+                Goal
+              </label>
+              <select
+                id={`${ids}-goal`}
+                value={draft.goalId ?? ""}
+                onChange={(e) => update("goalId", e.target.value ? Number(e.target.value) : null)}
+                className={inputClass}
+              >
+                <option value="">No goal</option>
+                {goals.map((goal) => (
+                  <option key={goal.id} value={goal.id}>
+                    {goal.title}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 

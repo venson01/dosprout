@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { fromDateAndTime } from "@/lib/task-helpers";
-import type { Priority, Status, Task, UpdateTaskInput } from "@/lib/types";
+import type { CreateGoalInput, Goal, Priority, Status, Task, UpdateTaskInput } from "@/lib/types";
 
 /** What the task editor dialog works with before anything is saved. */
 export interface TaskDraft {
@@ -18,6 +18,8 @@ export interface TaskDraft {
   startTime: string;
   dueDate: string;
   dueTime: string;
+  /** The goal the task belongs to, or null. */
+  goalId: number | null;
   subtasks: DraftSubtask[];
 }
 
@@ -33,22 +35,26 @@ export interface DraftSubtask {
 type LoadState = "loading" | "ready" | "error";
 
 /**
- * Loads the task list from the API and exposes functions to change it.
+ * Loads the task list (and the goals, which tasks belong to) from the API and
+ * exposes functions to change them.
  * Quick actions (moving, completing, deleting) update the screen immediately
  * and quietly re-sync with the server if the request fails.
  */
 export function useTasks() {
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [goals, setGoals] = useState<Goal[]>([]);
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [loadError, setLoadError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
-    api.listTasks().then(
-      (list) => {
+    // Both at once: the pages need the goals to show which goal a task belongs to.
+    Promise.all([api.listTasks(), api.listGoals()]).then(
+      ([taskList, goalList]) => {
         if (cancelled) return;
-        setTasks(list);
+        setTasks(taskList);
+        setGoals(goalList);
         setLoadState("ready");
       },
       (error: Error) => {
@@ -120,6 +126,7 @@ export function useTasks() {
         tag: draft.tag,
         startAt: fromDateAndTime(draft.startDate, draft.startTime),
         dueAt: fromDateAndTime(draft.dueDate, draft.dueTime),
+        goalId: draft.goalId,
       };
 
       if (!original) {
@@ -158,7 +165,33 @@ export function useTasks() {
     [replaceTask, resync],
   );
 
-  return { tasks, loadState, loadError, reload, updateTask, deleteTask, saveTask };
+  /** Creates a new goal (original = null) or saves changes to an existing one. */
+  const saveGoal = useCallback(async (original: Goal | null, input: CreateGoalInput) => {
+    const goal = original ? await api.updateGoal(original.id, input) : await api.createGoal(input);
+    setGoals((list) => (original ? list.map((g) => (g.id === goal.id ? goal : g)) : [...list, goal]));
+    return goal;
+  }, []);
+
+  /** Deletes a goal. Its tasks stay, they just no longer belong to a goal. */
+  const deleteGoal = useCallback(async (id: number) => {
+    await api.deleteGoal(id);
+    setGoals((list) => list.filter((g) => g.id !== id));
+    // The server unlinked the goal's tasks; do the same here.
+    setTasks((list) => list.map((t) => (t.goalId === id ? { ...t, goalId: null } : t)));
+  }, []);
+
+  return {
+    tasks,
+    goals,
+    loadState,
+    loadError,
+    reload,
+    updateTask,
+    deleteTask,
+    saveTask,
+    saveGoal,
+    deleteGoal,
+  };
 }
 
 /** Sends only what changed in the editor to the API, then returns the fresh task. */

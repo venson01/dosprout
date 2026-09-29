@@ -7,6 +7,12 @@ export const PRIORITIES = ["low", "mid", "high"] as const;
 export type Status = (typeof STATUSES)[number];
 export type Priority = (typeof PRIORITIES)[number];
 
+/** The colors a goal can have (the frontend maps each one to a color token). */
+// In this order on purpose: it was checked with a color-blindness validator so that
+// neighboring colors stay easy to tell apart. A goal's name is always shown next to its color.
+export const GOAL_COLORS = ["blue", "orange", "aqua", "yellow", "magenta", "violet"] as const;
+export type GoalColor = (typeof GOAL_COLORS)[number];
+
 export interface Subtask {
   id: number;
   taskId: number;
@@ -32,6 +38,8 @@ export interface Task {
   updatedAt: string;
   /** When the task was last moved to "done" (UTC), or null while it isn't done. Set by the server. */
   completedAt: string | null;
+  /** The goal this task belongs to, or null. */
+  goalId: number | null;
   subtasks: Subtask[];
 }
 
@@ -43,6 +51,7 @@ export interface CreateTaskInput {
   tag?: string;
   startAt?: string | null;
   dueAt?: string | null;
+  goalId?: number | null;
   /** Titles of subtasks to create together with the task. */
   subtasks?: string[];
 }
@@ -59,3 +68,27 @@ export interface UpdateSubtaskInput {
   title?: string;
   done?: boolean;
 }
+
+/**
+ * A bigger aim that tasks belong to (task.goalId). Its progress isn't stored:
+ * it's the share of its tasks that are done.
+ */
+export interface Goal {
+  id: number;
+  title: string;
+  description: string;
+  color: GoalColor;
+  /** The day the goal should be reached, as "2026-12-31" (no time), or null. */
+  targetDate: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateGoalInput {
+  title: string;
+  description?: string;
+  color?: GoalColor;
+  targetDate?: string | null;
+}
+
+export type UpdateGoalInput = Partial<CreateGoalInput>;

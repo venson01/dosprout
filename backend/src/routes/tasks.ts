@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
+import type { GoalStore } from "../goal-store.js";
 import { hasUnfinishedSubtasks, toUtcTimestamp, type TaskStore } from "../task-store.js";
 import {
   PRIORITIES,
@@ -21,6 +22,8 @@ const taskFields = {
   // ISO 8601 with a timezone, e.g. "2026-11-17T17:00:00.000Z". null = no date.
   startAt: { type: ["string", "null"], format: "date-time" },
   dueAt: { type: ["string", "null"], format: "date-time" },
+  // The goal this task belongs to. null = no goal.
+  goalId: { type: ["integer", "null"], minimum: 1 },
 } as const;
 
 const taskIdParams = {
@@ -50,6 +53,7 @@ function badRequest(reply: FastifyReply, message: string) {
 }
 
 const DATES_OUT_OF_ORDER = "The due date can't be earlier than the start date.";
+const GOAL_NOT_FOUND = "That goal doesn't exist (it may have been deleted). Pick another goal.";
 const SUBTASKS_UNFINISHED =
   "This task still has unfinished subtasks. Tick them all off first, then it's done.";
 
@@ -63,8 +67,16 @@ function notFound(reply: FastifyReply, what = "Task") {
   return reply.code(404).send({ statusCode: 404, error: "Not Found", message: `${what} not found` });
 }
 
-export async function taskRoutes(app: FastifyInstance, opts: { store: TaskStore }) {
-  const { store } = opts;
+export async function taskRoutes(
+  app: FastifyInstance,
+  opts: { store: TaskStore; goals: GoalStore },
+) {
+  const { store, goals } = opts;
+
+  /** A task may only point at a goal that exists. */
+  async function goalMissing(goalId: number | null | undefined) {
+    return goalId !== undefined && goalId !== null && !(await goals.get(goalId));
+  }
 
   app.get("/tasks", async () => store.list());
 
@@ -93,6 +105,7 @@ export async function taskRoutes(app: FastifyInstance, opts: { store: TaskStore 
       if (!datesInOrder(request.body.startAt, request.body.dueAt)) {
         return badRequest(reply, DATES_OUT_OF_ORDER);
       }
+      if (await goalMissing(request.body.goalId)) return badRequest(reply, GOAL_NOT_FOUND);
       // New subtasks always start unfinished, so a task with subtasks can't start as done.
       if (request.body.status === "done" && (request.body.subtasks?.length ?? 0) > 0) {
         return badRequest(reply, SUBTASKS_UNFINISHED);
@@ -120,6 +133,7 @@ export async function taskRoutes(app: FastifyInstance, opts: { store: TaskStore 
       // Check the dates as they will be after this update.
       const { startAt = existing.startAt, dueAt = existing.dueAt } = request.body;
       if (!datesInOrder(startAt, dueAt)) return badRequest(reply, DATES_OUT_OF_ORDER);
+      if (await goalMissing(request.body.goalId)) return badRequest(reply, GOAL_NOT_FOUND);
       if (request.body.status === "done" && hasUnfinishedSubtasks(existing)) {
         return badRequest(reply, SUBTASKS_UNFINISHED);
       }

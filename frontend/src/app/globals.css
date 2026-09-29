@@ -29,6 +29,22 @@
   --color-low: #2a9d62;
   --color-low-bg: #e8f7ef;
 
+  /*
+    Goal colors (blue reuses --color-brand). Checked with a color-blindness validator in
+    this order: blue, orange, aqua, yellow, magenta, violet. The lighter ones are faint on
+    white, so a goal's name is always shown next to its color.
+  */
+  --color-goal-orange: #eb6834;
+  --color-goal-orange-bg: #fdeee7;
+  --color-goal-aqua: #1baf7a;
+  --color-goal-aqua-bg: #e4f6ef;
+  --color-goal-yellow: #eda100;
+  --color-goal-yellow-bg: #fdf4dc;
+  --color-goal-magenta: #e87ba4;
+  --color-goal-magenta-bg: #fcedf3;
+  --color-goal-violet: #4a3aa7;
+  --color-goal-violet-bg: #edeafa;
+
   /* Animations used by the Dashboard's top cards: "animate-card-in" and "animate-bar-grow". */
   /* "backwards" (not "both"): once finished, the animation lets go of the card, so its hover lift still works. */
   --animate-card-in: card-in 450ms ease-out backwards;

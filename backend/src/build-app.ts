@@ -1,6 +1,8 @@
 import cors from "@fastify/cors";
 import Fastify, { type FastifyServerOptions } from "fastify";
 import { openDatabase } from "./db.js";
+import { GoalStore } from "./goal-store.js";
+import { goalRoutes } from "./routes/goals.js";
 import { taskRoutes } from "./routes/tasks.js";
 import { TaskStore } from "./task-store.js";
 
@@ -37,7 +39,7 @@ export function buildApp(options: AppOptions) {
   }));
   app.get("/api/health", async () => ({ ok: true }));
 
-  // Opens the database, then adds the task routes that use it.
+  // Opens the database, then adds the routes that use it.
   app.register(async (api) => {
     const db = await openDatabase({
       url: options.databaseUrl,
@@ -45,7 +47,9 @@ export function buildApp(options: AppOptions) {
       seed: options.seed,
     });
     api.addHook("onClose", async () => db.close());
-    await api.register(taskRoutes, { prefix: "/api", store: new TaskStore(db) });
+    const goals = new GoalStore(db);
+    await api.register(taskRoutes, { prefix: "/api", store: new TaskStore(db), goals });
+    await api.register(goalRoutes, { prefix: "/api", goals });
   });
 
   return app;

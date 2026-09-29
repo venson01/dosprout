@@ -22,6 +22,7 @@ interface TaskRow {
   created_at: string;
   updated_at: string;
   completed_at: string | null;
+  goal_id: number | null;
 }
 
 interface SubtaskRow {
@@ -56,6 +57,7 @@ function toTask(row: TaskRow, subtasks: Subtask[]): Task {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     completedAt: row.completed_at,
+    goalId: row.goal_id,
     subtasks,
   };
 }
@@ -95,7 +97,7 @@ export function hasUnfinishedSubtasks(task: Pick<Task, "subtasks">): boolean {
 
 // SQL snippets used in several queries below.
 // The current time as a UTC timestamp, e.g. "2026-11-17T16:00:00.000Z".
-const NOW = "strftime('%Y-%m-%dT%H:%M:%fZ', 'now')";
+export const NOW = "strftime('%Y-%m-%dT%H:%M:%fZ', 'now')";
 // The bottom of a status column. Needs the status as its "?" argument.
 const NEXT_TASK_POSITION = "(SELECT COALESCE(MAX(position), -1) + 1 FROM tasks WHERE status = ?)";
 
@@ -108,6 +110,7 @@ const UPDATABLE_TASK_COLUMNS = {
   tag: "tag",
   startAt: "start_at",
   dueAt: "due_at",
+  goalId: "goal_id",
   position: "position",
 } as const satisfies Record<keyof UpdateTaskInput, string>;
 
@@ -158,8 +161,8 @@ export class TaskStore {
     const [taskResult] = await this.db.batch(
       [
         {
-          sql: `INSERT INTO tasks (title, description, status, priority, tag, start_at, due_at, position, completed_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ${NEXT_TASK_POSITION}, ${status === "done" ? NOW : "NULL"})`,
+          sql: `INSERT INTO tasks (title, description, status, priority, tag, start_at, due_at, goal_id, position, completed_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ${NEXT_TASK_POSITION}, ${status === "done" ? NOW : "NULL"})`,
           args: [
             input.title.trim(),
             input.description?.trim() ?? "",
@@ -168,6 +171,7 @@ export class TaskStore {
             input.tag?.trim() ?? "",
             toUtcTimestamp(input.startAt ?? null),
             toUtcTimestamp(input.dueAt ?? null),
+            input.goalId ?? null,
             status,
           ],
         },
