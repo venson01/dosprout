@@ -11,10 +11,9 @@ import {
   hasUnfinishedSubtasks,
   STATUS_LABELS,
   statusFromSubtasks,
-  TAG_SUGGESTIONS,
   toDateAndTime,
 } from "@/lib/task-helpers";
-import { PRIORITIES, STATUSES, type Priority, type Status, type Task } from "@/lib/types";
+import { PRIORITIES, STATUSES, type Priority, type Settings, type Status, type Task } from "@/lib/types";
 
 interface TaskDialogProps {
   /** The task being edited, or null to create a new one. */
@@ -38,12 +37,9 @@ const PRIORITY_ACTIVE: Record<Priority, string> = {
 
 // Input look without a width, for inputs that set their own width.
 const inputBase =
-  "rounded-lg border border-line bg-white px-3 py-2 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-brand/20";
+  "rounded-lg border border-line bg-surface px-3 py-2 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-brand/20";
 const inputClass = `${inputBase} w-full`;
 
-// Filled in when you pick a date but no time yet.
-const DEFAULT_START_TIME = "09:00";
-const DEFAULT_DUE_TIME = "17:00";
 
 let nextKey = 0;
 const newKey = () => `new-${nextKey++}`;
@@ -51,19 +47,21 @@ const newKey = () => `new-${nextKey++}`;
 function draftFromTask(
   task: Task | null,
   defaultStatus: Status,
+  settings: Settings,
   defaultDueDate?: string,
   defaultGoalId?: number,
 ): TaskDraft {
   const start = toDateAndTime(task?.startAt ?? null);
   const due =
     !task && defaultDueDate
-      ? { date: defaultDueDate, time: DEFAULT_DUE_TIME }
+      ? { date: defaultDueDate, time: settings.defaultDueTime }
       : toDateAndTime(task?.dueAt ?? null);
   return {
     title: task?.title ?? "",
     description: task?.description ?? "",
     status: task?.status ?? defaultStatus,
-    priority: task?.priority ?? "mid",
+    // New tasks get the default priority from Settings.
+    priority: task?.priority ?? settings.defaultPriority,
     tag: task?.tag ?? "",
     startDate: start.date,
     startTime: start.time,
@@ -95,10 +93,10 @@ export function TaskDialog({
 }: TaskDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const titleRef = useRef<HTMLInputElement>(null);
+  const { goals, timeEntries, now, settings } = useTaskList();
   const [draft, setDraft] = useState(() =>
-    draftFromTask(task, defaultStatus, defaultDueDate, defaultGoalId),
+    draftFromTask(task, defaultStatus, settings, defaultDueDate, defaultGoalId),
   );
-  const { goals, timeEntries, now } = useTaskList();
   // Time already tracked on this task (shown next to the estimate).
   const tracked = task ? (trackedByTask(timeEntries, now).get(task.id) ?? 0) : 0;
   const [newSubtask, setNewSubtask] = useState("");
@@ -194,7 +192,7 @@ export function TaskDialog({
         event.preventDefault();
         onClose();
       }}
-      className="m-auto w-[calc(100%-2rem)] max-w-lg rounded-2xl bg-white p-0 text-ink shadow-2xl"
+      className="m-auto w-[calc(100%-2rem)] max-w-lg rounded-2xl bg-surface p-0 text-ink shadow-2xl"
     >
       <form onSubmit={handleSubmit} className="flex max-h-[85dvh] flex-col">
         <div className="flex items-center justify-between border-b border-line px-5 py-4">
@@ -300,7 +298,7 @@ export function TaskDialog({
                 className={inputClass}
               />
               <datalist id={`${ids}-tags`}>
-                {TAG_SUGGESTIONS.map((tag) => (
+                {settings.tagSuggestions.map((tag) => (
                   <option key={tag} value={tag} />
                 ))}
               </datalist>
@@ -329,14 +327,15 @@ export function TaskDialog({
             label="Start"
             date={draft.startDate}
             time={draft.startTime}
-            defaultTime={DEFAULT_START_TIME}
+            // Filled in when you pick a date but no time yet (both times come from Settings).
+            defaultTime={settings.defaultStartTime}
             onChange={(date, time) => setDraft((d) => ({ ...d, startDate: date, startTime: time }))}
           />
           <DateTimeField
             label="Due"
             date={draft.dueDate}
             time={draft.dueTime}
-            defaultTime={DEFAULT_DUE_TIME}
+            defaultTime={settings.defaultDueTime}
             onChange={(date, time) => setDraft((d) => ({ ...d, dueDate: date, dueTime: time }))}
           />
           <EstimateField

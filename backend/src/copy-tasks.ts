@@ -33,18 +33,20 @@ function insertSql(table: string, columns: string[]) {
 }
 
 /**
- * Copies every task, subtask, goal and time entry from one database to another, keeping their ids.
+ * Copies every task, subtask, goal, time entry and the settings from one database to another,
+ * keeping their ids.
  * Both must already be set up by openDatabase(), so they have the same tables.
  * The target must have no tasks, unless `replace` is true: then its tasks are deleted first.
  * It all happens in one transaction, so if anything fails, the target is left unchanged.
  */
 export async function copyTasks(from: Client, to: Client, { replace = false } = {}) {
-  const [tasks, subtasks, goals, time] = await from.batch(
+  const [tasks, subtasks, goals, time, settings] = await from.batch(
     [
       "SELECT * FROM tasks ORDER BY id",
       "SELECT * FROM subtasks ORDER BY id",
       "SELECT * FROM goals ORDER BY id",
       "SELECT * FROM time_entries ORDER BY id",
+      "SELECT * FROM settings",
     ],
     "read",
   );
@@ -59,6 +61,11 @@ export async function copyTasks(from: Client, to: Client, { replace = false } = 
       "DELETE FROM tasks",
       "DELETE FROM goals",
       "DELETE FROM time_entries",
+      "DELETE FROM settings",
+      ...settings.rows.map((row) => ({
+        sql: "INSERT INTO settings (id, data) VALUES (?, ?)",
+        args: [row.id, row.data],
+      })),
       ...goals.rows.map((row) => ({
         sql: insertSql("goals", GOAL_COLUMNS),
         args: GOAL_COLUMNS.map((column) => row[column]),

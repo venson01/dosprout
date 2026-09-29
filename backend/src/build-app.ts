@@ -2,9 +2,12 @@ import cors from "@fastify/cors";
 import Fastify, { type FastifyServerOptions } from "fastify";
 import { openDatabase } from "./db.js";
 import { GoalStore } from "./goal-store.js";
+import { BackupStore } from "./backup-store.js";
 import { goalRoutes } from "./routes/goals.js";
+import { settingsRoutes } from "./routes/settings.js";
 import { taskRoutes } from "./routes/tasks.js";
 import { timeRoutes } from "./routes/time.js";
+import { SettingsStore } from "./settings-store.js";
 import { TaskStore } from "./task-store.js";
 import { TimeStore } from "./time-store.js";
 
@@ -54,6 +57,11 @@ export function buildApp(options: AppOptions) {
     await api.register(taskRoutes, { prefix: "/api", store: tasks, goals });
     await api.register(goalRoutes, { prefix: "/api", goals });
     await api.register(timeRoutes, { prefix: "/api", time: new TimeStore(db), tasks });
+    await api.register(settingsRoutes, {
+      prefix: "/api",
+      settings: new SettingsStore(db),
+      backup: new BackupStore(db),
+    });
   });
 
   return app;

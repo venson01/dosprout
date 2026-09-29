@@ -134,7 +134,7 @@ function BoardColumn({ status, tasks, actions, onOpen }: ColumnProps) {
       ref={setNodeRef}
       aria-label={label}
       className={`flex w-[82vw] max-w-sm shrink-0 snap-start flex-col rounded-xl border p-3 transition-colors sm:w-80 lg:w-auto lg:max-w-none ${
-        isOver ? "border-brand bg-brand-soft" : "border-line bg-white"
+        isOver ? "border-brand bg-brand-soft" : "border-line bg-surface"
       }`}
     >
       <div className="mb-3 flex items-center justify-between px-1">
@@ -223,7 +223,7 @@ function CardBody({
   return (
     // "relative" keeps the hidden screen-reader text inside the card (it is absolutely positioned).
     <div
-      className={`relative rounded-lg border bg-white p-3.5 ${overdue ? "border-high" : "border-line"} ${className}`}
+      className={`relative rounded-lg border bg-surface p-3.5 ${overdue ? "border-high" : "border-line"} ${className}`}
     >
       <div className="flex items-start justify-between gap-2">
         <h3

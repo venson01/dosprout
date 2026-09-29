@@ -133,3 +133,52 @@ export interface UpdateTimeEntryInput {
   endedAt?: string;
   note?: string;
 }
+
+export const THEMES = ["system", "light", "dark"] as const;
+export type Theme = (typeof THEMES)[number];
+
+/** The app's settings (one set for everyone, since there are no accounts yet). */
+export interface Settings {
+  /** "system" follows the device's light / dark setting. */
+  theme: Theme;
+  /** Length of a focus (Pomodoro) session and of the break after it, in minutes. */
+  focusMinutes: number;
+  breakMinutes: number;
+  /** 0 = weeks start on Sunday, 1 = Monday (calendar and charts). */
+  weekStartsOn: 0 | 1;
+  /** Which kinds of notification to show (in the app and on the desktop). */
+  notifications: { started: boolean; dueSoon: boolean; done: boolean; focus: boolean };
+  /** Times filled in when you pick a start / due date for a new task, e.g. "09:00". */
+  defaultStartTime: string;
+  defaultDueTime: string;
+  defaultPriority: Priority;
+  /** Tags suggested in the task editor. */
+  tagSuggestions: string[];
+}
+
+export type UpdateSettingsInput = Partial<Omit<Settings, "notifications">> & {
+  notifications?: Partial<Settings["notifications"]>;
+};
+
+export const DEFAULT_SETTINGS: Settings = {
+  theme: "system",
+  focusMinutes: 25,
+  breakMinutes: 5,
+  weekStartsOn: 1,
+  notifications: { started: true, dueSoon: true, done: true, focus: true },
+  defaultStartTime: "09:00",
+  defaultDueTime: "17:00",
+  defaultPriority: "mid",
+  tagSuggestions: ["Work", "Health", "Personal", "Study", "Home"],
+};
+
+/** Everything in one object: what GET /export returns and POST /import accepts. */
+export interface Backup {
+  app: "DoSprout";
+  version: 1;
+  exportedAt?: string;
+  settings?: Partial<Settings>;
+  goals: Goal[];
+  tasks: Task[];
+  timeEntries: TimeEntry[];
+}

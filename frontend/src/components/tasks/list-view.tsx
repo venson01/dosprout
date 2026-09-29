@@ -41,7 +41,7 @@ function StatusSection({
     // The id lets other pages link here (e.g. the Dashboard's "In Progress" card -> /tasks#status-in_progress).
     <section
       id={`status-${status}`}
-      className="scroll-mt-20 rounded-xl border border-line bg-white px-4 pb-2 pt-3 sm:px-5"
+      className="scroll-mt-20 rounded-xl border border-line bg-surface px-4 pb-2 pt-3 sm:px-5"
     >
       <div className="flex items-center justify-between border-b border-line pb-2">
         <button
@@ -123,7 +123,7 @@ function TaskRow({ task, actions }: { task: Task; actions: TaskActions }) {
               ? "border-brand bg-brand text-white"
               : blocked
                 ? "cursor-not-allowed border-line bg-page"
-                : "border-line bg-white hover:border-brand"
+                : "border-line bg-surface hover:border-brand"
           }`}
         >
           {done && <Check className="size-3.5" strokeWidth={3} />}

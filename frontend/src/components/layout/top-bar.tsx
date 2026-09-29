@@ -10,7 +10,7 @@ export function TopBar({ onOpenMenu }: { onOpenMenu: () => void }) {
   const pathname = usePathname();
 
   return (
-    <header className="sticky top-0 z-20 flex items-center gap-3 border-b border-line bg-white px-4 py-3 sm:px-6 lg:px-8">
+    <header className="sticky top-0 z-20 flex items-center gap-3 border-b border-line bg-surface px-4 py-3 sm:px-6 lg:px-8">
       <button
         type="button"
         onClick={onOpenMenu}
@@ -99,7 +99,7 @@ function SearchInput({ value, onChange }: { value: string; onChange: (text: stri
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder="Search for tasks..."
-        className="w-full rounded-lg border border-line bg-white py-2 pl-9 pr-3 text-sm outline-none placeholder:text-muted focus:border-brand focus:ring-2 focus:ring-brand/20"
+        className="w-full rounded-lg border border-line bg-surface py-2 pl-9 pr-3 text-sm outline-none placeholder:text-muted focus:border-brand focus:ring-2 focus:ring-brand/20"
       />
     </label>
   );

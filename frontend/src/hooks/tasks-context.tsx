@@ -22,7 +22,7 @@ const TasksContext = createContext<TaskList | null>(null);
 export function TasksProvider({ children }: { children: React.ReactNode }) {
   const taskList = useTasks();
   const now = useClock(upcomingMoments(taskList.tasks));
-  const timer = useTimer(taskList.timeEntries, taskList);
+  const timer = useTimer(taskList.timeEntries, taskList, taskList.settings);
   return <TasksContext value={{ ...taskList, now, timer }}>{children}</TasksContext>;
 }
 

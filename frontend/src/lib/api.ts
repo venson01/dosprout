@@ -1,12 +1,15 @@
 import type {
+  Backup,
   CreateGoalInput,
   CreateTaskInput,
   CreateTimeEntryInput,
   Goal,
+  Settings,
   StartTimerInput,
   Task,
   TimeEntry,
   UpdateGoalInput,
+  UpdateSettingsInput,
   UpdateTaskInput,
   UpdateTimeEntryInput,
 } from "./types";
@@ -89,4 +92,15 @@ export const api = {
   updateTimeEntry: (id: number, input: UpdateTimeEntryInput) =>
     request<TimeEntry>(`/time-entries/${id}`, { method: "PATCH", body: json(input) }),
   deleteTimeEntry: (id: number) => request<void>(`/time-entries/${id}`, { method: "DELETE" }),
+
+  getSettings: () => request<Settings>("/settings"),
+  updateSettings: (input: UpdateSettingsInput) =>
+    request<Settings>("/settings", { method: "PATCH", body: json(input) }),
+  /** Everything as one object, for a backup file. */
+  exportData: () => request<Backup>("/export"),
+  /** Replaces ALL data with a backup's. */
+  importData: (backup: unknown) =>
+    request<{ ok: true }>("/import", { method: "POST", body: json(backup) }),
+  /** Deletes every task, goal and time entry (settings stay). */
+  deleteAllData: () => request<void>("/data", { method: "DELETE" }),
 };

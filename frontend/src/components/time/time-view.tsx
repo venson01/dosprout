@@ -10,10 +10,8 @@ import { useTicker } from "@/hooks/use-ticker";
 import { addDays, dayKey, fromDayKey, startOfDay } from "@/lib/calendar";
 import { PERIODS, periodStart } from "@/lib/periods";
 import {
-  BREAK_MINUTES,
   entriesByDay,
   entryDuration,
-  FOCUS_MINUTES,
   formatClock,
   formatDuration,
   MINUTE_MS,
@@ -67,7 +65,7 @@ export function TimeView() {
           <button
             type="button"
             onClick={() => setEditingEntry(null)}
-            className="ml-auto inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-brand ring-1 ring-line hover:bg-white"
+            className="ml-auto inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-brand ring-1 ring-line hover:bg-surface"
           >
             <Plus className="size-4" />
             Add time
@@ -129,7 +127,7 @@ export function TimeView() {
 /** A white box with a heading. */
 function Card({ title, aside, children }: { title: string; aside?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <section className="h-full rounded-xl border border-line bg-white p-4 sm:p-5">
+    <section className="h-full rounded-xl border border-line bg-surface p-4 sm:p-5">
       <div className="mb-4 flex items-baseline justify-between gap-3">
         <h2 className="font-semibold">{title}</h2>
         {aside && <p className="text-sm text-muted">{aside}</p>}
@@ -141,7 +139,8 @@ function Card({ title, aside, children }: { title: string; aside?: React.ReactNo
 
 /** What's happening now: the running timer, the focus break, or buttons to start one. */
 function NowCard({ tasks, now, onError }: { tasks: Task[]; now: number; onError: (message: string) => void }) {
-  const { timer } = useTaskList();
+  const { timer, settings } = useTaskList();
+  const { focusMinutes, breakMinutes } = settings;
   const { running, breakEndsAt } = timer;
   // The task to track; remembered while you stay on the page.
   const [taskId, setTaskId] = useState<number | null>(null);
@@ -152,8 +151,8 @@ function NowCard({ tasks, now, onError }: { tasks: Task[]; now: number; onError:
     const task = tasks.find((t) => t.id === running.taskId);
     const started = Date.parse(running.startedAt);
     const focus = running.kind === "focus";
-    const left = started + FOCUS_MINUTES * MINUTE_MS - now;
-    const focusDone = Math.min(100, Math.max(0, ((now - started) / (FOCUS_MINUTES * MINUTE_MS)) * 100));
+    const left = started + focusMinutes * MINUTE_MS - now;
+    const focusDone = Math.min(100, Math.max(0, ((now - started) / (focusMinutes * MINUTE_MS)) * 100));
     return (
       <Card title={focus ? "Focus session" : "Timer running"}>
         <p className="truncate text-sm text-muted">{task ? task.title : "No task"}</p>
@@ -173,7 +172,7 @@ function NowCard({ tasks, now, onError }: { tasks: Task[]; now: number; onError:
               <div className="h-full rounded-full bg-brand" style={{ width: `${focusDone}%` }} />
             </div>
             <p className="mt-2 text-sm text-muted">
-              Left of {FOCUS_MINUTES} minutes. Then a {BREAK_MINUTES}-minute break starts.
+              Left of {focusMinutes} minutes. Then a {breakMinutes}-minute break starts.
             </p>
           </>
         ) : (
@@ -182,7 +181,7 @@ function NowCard({ tasks, now, onError }: { tasks: Task[]; now: number; onError:
         <button
           type="button"
           onClick={() => report(timer.stop())}
-          className="mt-4 inline-flex items-center gap-2 rounded-lg bg-ink px-4 py-2 text-sm font-medium text-white hover:bg-ink/85"
+          className="mt-4 inline-flex items-center gap-2 rounded-lg bg-inverse px-4 py-2 text-sm font-medium text-white hover:bg-inverse/85"
         >
           <Square className="size-3.5 fill-current" />
           Stop
@@ -221,7 +220,7 @@ function NowCard({ tasks, now, onError }: { tasks: Task[]; now: number; onError:
         id="now-task"
         value={taskId ?? ""}
         onChange={(e) => setTaskId(e.target.value ? Number(e.target.value) : null)}
-        className="w-full rounded-lg border border-line bg-white px-3 py-2 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+        className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
       >
         <option value="">No task</option>
         {openTasks.map((task) => (
@@ -245,12 +244,13 @@ function NowCard({ tasks, now, onError }: { tasks: Task[]; now: number; onError:
           className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-brand ring-1 ring-line hover:bg-brand-soft"
         >
           <Timer className="size-4" />
-          Focus {FOCUS_MINUTES} min
+          Focus {focusMinutes} min
         </button>
       </div>
       <p className="mt-3 text-sm text-muted">
-        A focus session is {FOCUS_MINUTES} minutes of work, then a {BREAK_MINUTES}-minute break
-        (the Pomodoro technique). Both are saved as tracked time.
+        A focus session is {focusMinutes} minutes of work, then a {breakMinutes}-minute break
+        (the Pomodoro technique). The focus time is saved as tracked time. You can change both
+        lengths in Settings.
       </p>
     </Card>
   );
@@ -259,7 +259,8 @@ function NowCard({ tasks, now, onError }: { tasks: Task[]; now: number; onError:
 /** Tracked time per day / week / month (the same chart as the Dashboard's). */
 function TrackedChart({ entries, now }: { entries: TimeEntry[]; now: number }) {
   const [period, choose] = usePeriodParam("/time");
-  const columns = trackedPer(entries, now, period);
+  const { settings } = useTaskList();
+  const columns = trackedPer(entries, now, period, settings.weekStartsOn);
   const total = columns.reduce((sum, column) => sum + column.value, 0);
 
   return (
@@ -271,6 +272,7 @@ function TrackedChart({ entries, now }: { entries: TimeEntry[]; now: number }) {
         formatValue={formatDuration}
         valueLabel="tracked"
         description="Time tracked"
+        weekStartsOn={settings.weekStartsOn}
         // At least 1 hour, so a quiet day doesn't fill the whole chart.
         minScale={60 * MINUTE_MS}
       />
@@ -295,9 +297,9 @@ function TimePerTask({
   onOpenTask: (task: Task) => void;
   onError: (message: string) => void;
 }) {
-  const { timer } = useTaskList();
+  const { timer, settings } = useTaskList();
   const totals = trackedByTask(entries, now);
-  const weekStart = periodStart(new Date(now), "week").getTime();
+  const weekStart = periodStart(new Date(now), "week", settings.weekStartsOn).getTime();
   const thisWeek = entries
     .filter((entry) => Date.parse(entry.startedAt) >= weekStart)
     .reduce((sum, entry) => sum + entryDuration(entry, now), 0);

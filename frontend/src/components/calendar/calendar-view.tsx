@@ -36,7 +36,7 @@ import {
   startOfDay,
   taskDays,
   tasksOnDay,
-  WEEKDAY_LABELS,
+  weekdayLabels,
   weekBars,
   type WeekBar,
 } from "@/lib/calendar";
@@ -147,7 +147,7 @@ function dayDetail(task: Task, day: Date): string {
  */
 export function CalendarView() {
   const searchParams = useSearchParams();
-  const { tasks, loadState, loadError, reload, updateTask, deleteTask, saveTask, now } =
+  const { tasks, loadState, loadError, reload, updateTask, deleteTask, saveTask, now, settings } =
     useTaskList();
   const [editor, setEditor] = useState<EditorState>(null);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
@@ -176,7 +176,8 @@ export function CalendarView() {
   // The month on screen lives in the address (?month=2026-09), like ?view= on the Tasks page.
   const month =
     parseMonthKey(searchParams.get("month")) ?? new Date(today.getFullYear(), today.getMonth(), 1);
-  const weeks = monthWeeks(month);
+  const weeks = monthWeeks(month, settings.weekStartsOn);
+  const weekdays = weekdayLabels(settings.weekStartsOn);
   const inMonth = (day: Date) => day.getMonth() === month.getMonth();
   // The day whose tasks are listed below the grid: the one you picked, else today, else the 1st.
   const picked = selectedKey ? fromDayKey(selectedKey) : null;
@@ -252,7 +253,7 @@ export function CalendarView() {
                 showMonth(today);
                 selectDay(today);
               }}
-              className="rounded-lg px-3 py-2 text-sm font-medium ring-1 ring-line hover:bg-white"
+              className="rounded-lg px-3 py-2 text-sm font-medium ring-1 ring-line hover:bg-surface"
             >
               Today
             </button>
@@ -261,7 +262,7 @@ export function CalendarView() {
                 type="button"
                 onClick={() => showMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))}
                 aria-label="Previous month"
-                className="rounded-l-lg p-2 hover:bg-white"
+                className="rounded-l-lg p-2 hover:bg-surface"
               >
                 <ChevronLeft className="size-5" />
               </button>
@@ -272,7 +273,7 @@ export function CalendarView() {
                 type="button"
                 onClick={() => showMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))}
                 aria-label="Next month"
-                className="rounded-r-lg p-2 hover:bg-white"
+                className="rounded-r-lg p-2 hover:bg-surface"
               >
                 <ChevronRight className="size-5" />
               </button>
@@ -315,9 +316,9 @@ export function CalendarView() {
               },
             }}
           >
-            <div className="hidden overflow-hidden rounded-xl border border-line bg-white md:block">
+            <div className="hidden overflow-hidden rounded-xl border border-line bg-surface md:block">
               <div className="grid grid-cols-7 border-b border-line bg-page text-xs font-medium text-muted">
-                {WEEKDAY_LABELS.map((label) => (
+                {weekdays.map((label) => (
                   <div key={label} className="px-2 py-2">
                     {label}
                   </div>
@@ -350,9 +351,9 @@ export function CalendarView() {
           </DndContext>
 
           {/* Phones: a small month with a dot per task. Tap a day to list its tasks below. */}
-          <div className="rounded-xl border border-line bg-white p-2 md:hidden">
+          <div className="rounded-xl border border-line bg-surface p-2 md:hidden">
             <div className="grid grid-cols-7 pb-1 text-center text-xs font-medium text-muted">
-              {WEEKDAY_LABELS.map((label) => (
+              {weekdays.map((label) => (
                 <div key={label}>{label.slice(0, 2)}</div>
               ))}
             </div>
@@ -398,7 +399,7 @@ export function CalendarView() {
           <section
             ref={panelRef}
             aria-labelledby="day-heading"
-            className="mt-5 scroll-mt-20 rounded-xl border border-line bg-white"
+            className="mt-5 scroll-mt-20 rounded-xl border border-line bg-surface"
           >
             <div className="flex items-center gap-3 border-b border-line px-4 py-3">
               <h2 id="day-heading" className="font-semibold">

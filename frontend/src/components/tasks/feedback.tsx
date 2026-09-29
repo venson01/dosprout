@@ -15,7 +15,7 @@ export function ErrorToast({ message, onDismiss }: { message: string; onDismiss:
   return (
     <div
       role="alert"
-      className="fixed inset-x-4 bottom-4 z-50 mx-auto flex max-w-md items-start gap-3 rounded-xl bg-ink px-4 py-3 text-sm text-white shadow-xl"
+      className="fixed inset-x-4 bottom-4 z-50 mx-auto flex max-w-md items-start gap-3 rounded-xl bg-inverse px-4 py-3 text-sm text-white shadow-xl"
     >
       <CircleAlert className="mt-0.5 size-4 shrink-0 text-high" />
       <p className="flex-1">{message}</p>
@@ -30,7 +30,7 @@ export function LoadingSkeleton({ label = "Loading tasks" }: { label?: string })
   return (
     <div className="space-y-5" aria-busy="true" aria-label={label}>
       {[0, 1, 2].map((i) => (
-        <div key={i} className="animate-pulse rounded-xl border border-line bg-white p-5">
+        <div key={i} className="animate-pulse rounded-xl border border-line bg-surface p-5">
           <div className="h-4 w-28 rounded bg-line" />
           <div className="mt-5 space-y-3">
             <div className="h-3 w-3/4 rounded bg-page" />
@@ -44,7 +44,7 @@ export function LoadingSkeleton({ label = "Loading tasks" }: { label?: string })
 
 export function LoadError({ message, onRetry }: { message: string | null; onRetry: () => void }) {
   return (
-    <div className="rounded-xl border border-line bg-white p-6 text-center sm:p-10">
+    <div className="rounded-xl border border-line bg-surface p-6 text-center sm:p-10">
       <CircleAlert className="mx-auto size-10 text-high" />
       <h2 className="mt-3 text-lg font-semibold">Couldn&apos;t load your tasks</h2>
       <p className="mt-1 text-sm text-muted">{message}</p>

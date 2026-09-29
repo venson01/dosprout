@@ -83,6 +83,14 @@ const MIGRATIONS: string[] = [
   CREATE INDEX time_entries_task_id ON time_entries(task_id);
   ALTER TABLE tasks ADD COLUMN estimate_minutes INTEGER;
   `,
+
+  // Version 6: settings, stored as one JSON object in a one-row table (see SettingsStore).
+  `
+  CREATE TABLE settings (
+    id   INTEGER PRIMARY KEY CHECK (id = 1),
+    data TEXT    NOT NULL
+  );
+  `,
 ];
 
 export interface OpenDatabaseOptions {

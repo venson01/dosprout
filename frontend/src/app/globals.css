@@ -15,9 +15,13 @@
   --color-sidebar-active: #2e2f33;
 
   --color-page: #f5f6f8;
+  /* Cards, dialogs, inputs: use bg-surface (not bg-white) so dark mode can change it. */
+  --color-surface: #ffffff;
   --color-line: #e6e8ec;
   --color-ink: #1c1d21;
   --color-muted: #7c808a;
+  /* Dark boxes with white text (tooltips, toasts) in both light and dark mode. */
+  --color-inverse: #1c1d21;
 
   --color-tag: #3a6fbf;
   --color-tag-bg: #e9f1fc;
@@ -70,6 +74,81 @@
     to {
       transform: scaleX(1);
     }
+  }
+}
+
+/*
+  Dark mode. The Settings page saves "system", "light" or "dark"; "light" / "dark" put
+  data-theme on <html> (see ThemeSync), "system" leaves it off and follows the device.
+  Only the color values change, so classes like bg-surface and text-ink work in both modes.
+  The dark goal colors were checked with the color-blindness validator on a dark surface.
+  The same values appear twice: once for "dark", once for "system" on a dark device.
+*/
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --color-brand: #4c8df6;
+  --color-brand-hover: #6aa1f8;
+  --color-brand-soft: #1b2b47;
+  --color-sidebar: #0b0c0e;
+  --color-sidebar-active: #1f2024;
+  --color-page: #111214;
+  --color-surface: #1a1b1f;
+  --color-line: #2d2f35;
+  --color-ink: #e7e8eb;
+  --color-muted: #9a9ea8;
+  --color-inverse: #3a3c43;
+  --color-tag: #7eaaf0;
+  --color-tag-bg: #1d2a40;
+  --color-high: #f07370;
+  --color-high-bg: #3b1f21;
+  --color-mid: #e5b04a;
+  --color-mid-bg: #3a3018;
+  --color-low: #45c486;
+  --color-low-bg: #17321f;
+  --color-goal-orange: #d95926;
+  --color-goal-orange-bg: #3a2218;
+  --color-goal-aqua: #199e70;
+  --color-goal-aqua-bg: #143027;
+  --color-goal-yellow: #c98500;
+  --color-goal-yellow-bg: #362a12;
+  --color-goal-magenta: #d55181;
+  --color-goal-magenta-bg: #3a1c29;
+  --color-goal-violet: #9085e9;
+  --color-goal-violet-bg: #25223f;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --color-brand: #4c8df6;
+    --color-brand-hover: #6aa1f8;
+    --color-brand-soft: #1b2b47;
+    --color-sidebar: #0b0c0e;
+    --color-sidebar-active: #1f2024;
+    --color-page: #111214;
+    --color-surface: #1a1b1f;
+    --color-line: #2d2f35;
+    --color-ink: #e7e8eb;
+    --color-muted: #9a9ea8;
+    --color-inverse: #3a3c43;
+    --color-tag: #7eaaf0;
+    --color-tag-bg: #1d2a40;
+    --color-high: #f07370;
+    --color-high-bg: #3b1f21;
+    --color-mid: #e5b04a;
+    --color-mid-bg: #3a3018;
+    --color-low: #45c486;
+    --color-low-bg: #17321f;
+    --color-goal-orange: #d95926;
+    --color-goal-orange-bg: #3a2218;
+    --color-goal-aqua: #199e70;
+    --color-goal-aqua-bg: #143027;
+    --color-goal-yellow: #c98500;
+    --color-goal-yellow-bg: #362a12;
+    --color-goal-magenta: #d55181;
+    --color-goal-magenta-bg: #3a1c29;
+    --color-goal-violet: #9085e9;
+    --color-goal-violet-bg: #25223f;
   }
 }
 

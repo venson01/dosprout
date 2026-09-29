@@ -4,7 +4,7 @@ import { Coffee, Square, X } from "lucide-react";
 import Link from "next/link";
 import { useTaskList } from "@/hooks/tasks-context";
 import { useTicker } from "@/hooks/use-ticker";
-import { FOCUS_MINUTES, formatClock, MINUTE_MS } from "@/lib/time";
+import { formatClock, MINUTE_MS } from "@/lib/time";
 
 /**
  * The running timer in the top bar, on every page: the time (counting up, or down for
@@ -12,7 +12,7 @@ import { FOCUS_MINUTES, formatClock, MINUTE_MS } from "@/lib/time";
  * break's countdown. Hidden when nothing is running.
  */
 export function TimerPill() {
-  const { tasks, timer } = useTaskList();
+  const { tasks, timer, settings } = useTaskList();
   const { running, breakEndsAt, stop, skipBreak } = timer;
   // Tick every second only while there's something to count.
   const now = useTicker(Boolean(running) || breakEndsAt !== null);
@@ -21,7 +21,7 @@ export function TimerPill() {
     const task = tasks.find((t) => t.id === running.taskId);
     const started = Date.parse(running.startedAt);
     const focus = running.kind === "focus";
-    const clock = focus ? formatClock(started + FOCUS_MINUTES * MINUTE_MS - now) : formatClock(now - started);
+    const clock = focus ? formatClock(started + settings.focusMinutes * MINUTE_MS - now) : formatClock(now - started);
     return (
       <div className="flex shrink-0 items-center gap-1 rounded-full bg-brand-soft py-1 pl-3 pr-1 text-sm text-brand">
         <Link
@@ -39,7 +39,7 @@ export function TimerPill() {
           type="button"
           onClick={() => stop().catch(() => {})}
           aria-label="Stop timer"
-          className="grid size-7 shrink-0 place-items-center rounded-full hover:bg-white"
+          className="grid size-7 shrink-0 place-items-center rounded-full hover:bg-surface"
         >
           <Square className="size-3.5 fill-current" />
         </button>
@@ -59,7 +59,7 @@ export function TimerPill() {
           type="button"
           onClick={skipBreak}
           aria-label="Skip the break"
-          className="grid size-7 place-items-center rounded-full hover:bg-white"
+          className="grid size-7 place-items-center rounded-full hover:bg-surface"
         >
           <X className="size-3.5" />
         </button>

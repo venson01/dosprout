@@ -1,4 +1,4 @@
-import { addDays, dayKey, startOfDay, WEEK_STARTS_ON } from "./calendar";
+import { addDays, dayKey, startOfDay, type WeekStart } from "./calendar";
 
 // Grouping things per day, week or month, for the charts on the Dashboard and the
 // Time page (their Day / Week / Month switch).
@@ -12,11 +12,11 @@ export const PERIODS: Record<Period, { label: string; columns: number; span: str
   month: { label: "Month", columns: 12, span: "12 months" },
 };
 
-/** The first day of the day / week / month that `date` falls in (weeks start on WEEK_STARTS_ON). */
-export function periodStart(date: Date, period: Period): Date {
+/** The first day of the day / week / month that `date` falls in (weeks start on `weekStartsOn`). */
+export function periodStart(date: Date, period: Period, weekStartsOn: WeekStart = 1): Date {
   const day = startOfDay(date);
   if (period === "day") return day;
-  if (period === "week") return addDays(day, -((day.getDay() - WEEK_STARTS_ON + 7) % 7));
+  if (period === "week") return addDays(day, -((day.getDay() - weekStartsOn + 7) % 7));
   return new Date(day.getFullYear(), day.getMonth(), 1);
 }
 
@@ -32,13 +32,18 @@ function periodsBefore(start: Date, period: Period, count: number): Date {
  * oldest first. The last column is the current day / week / month.
  * Each item has a moment (`at`, in milliseconds) and an amount (`value`).
  */
-export function sumPer(items: { at: number; value: number }[], now: number, period: Period) {
+export function sumPer(
+  items: { at: number; value: number }[],
+  now: number,
+  period: Period,
+  weekStartsOn: WeekStart = 1,
+) {
   const sums = new Map<string, number>();
   for (const { at, value } of items) {
-    const key = dayKey(periodStart(new Date(at), period));
+    const key = dayKey(periodStart(new Date(at), period, weekStartsOn));
     sums.set(key, (sums.get(key) ?? 0) + value);
   }
-  const current = periodStart(new Date(now), period);
+  const current = periodStart(new Date(now), period, weekStartsOn);
   const columns = PERIODS[period].columns;
   return Array.from({ length: columns }, (_, i) => {
     const start = periodsBefore(current, period, columns - 1 - i);

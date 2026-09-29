@@ -69,7 +69,7 @@ export function GoalsView() {
       {loadState === "loading" && <LoadingSkeleton label="Loading goals" />}
       {loadState === "error" && <LoadError message={loadError} onRetry={reload} />}
       {loadState === "ready" && goals.length === 0 && (
-        <div className="rounded-xl border border-line bg-white p-10 text-center">
+        <div className="rounded-xl border border-line bg-surface p-10 text-center">
           <Target className="mx-auto size-10 text-brand" aria-hidden />
           <h2 className="mt-3 text-lg font-semibold">No goals yet</h2>
           <p className="mx-auto mt-1 max-w-md text-sm text-muted">
@@ -165,7 +165,7 @@ function GoalCard({
       // The id lets the Dashboard link straight to this goal (/goals#goal-3).
       id={`goal-${goal.id}`}
       aria-labelledby={`goal-${goal.id}-title`}
-      className="flex scroll-mt-20 flex-col overflow-hidden rounded-xl border border-line bg-white animate-card-in motion-reduce:animate-none"
+      className="flex scroll-mt-20 flex-col overflow-hidden rounded-xl border border-line bg-surface animate-card-in motion-reduce:animate-none"
       style={{ animationDelay: `${delay}ms` }}
     >
       {/* A strip in the goal's color, so goals are easy to tell apart. */}

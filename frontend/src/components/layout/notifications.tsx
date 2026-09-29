@@ -29,8 +29,16 @@ const POPUP_MS = 6000;
  */
 export function Notifications() {
   const router = useRouter();
-  const { tasks, loadState, now } = useTaskList();
-  const notifications = useMemo(() => notificationsFromTasks(tasks, now), [tasks, now]);
+  const { tasks, loadState, now, settings } = useTaskList();
+  // Only the kinds switched on in Settings.
+  const kinds = settings.notifications;
+  const notifications = useMemo(
+    () =>
+      notificationsFromTasks(tasks, now).filter((n) =>
+        n.kind === "start" ? kinds.started : n.kind === "due-soon" ? kinds.dueSoon : kinds.done,
+      ),
+    [tasks, now, kinds.started, kinds.dueSoon, kinds.done],
+  );
   const readAt = useNotificationsReadAt();
   const unread = readAt === null ? 0 : notifications.filter((n) => n.at > readAt).length;
 
@@ -113,7 +121,7 @@ export function Notifications() {
 
         {open && (
           // Full width under the top bar on phones, a drop-down under the bell on bigger screens.
-          <div className="fixed inset-x-4 top-16 z-30 overflow-hidden rounded-xl border border-line bg-white shadow-lg sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:w-96">
+          <div className="fixed inset-x-4 top-16 z-30 overflow-hidden rounded-xl border border-line bg-surface shadow-lg sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:w-96">
             <h2 className="border-b border-line px-4 py-3 text-sm font-semibold">Notifications</h2>
             <DesktopNotificationsSetting />
             {notifications.length === 0 ? (
@@ -161,7 +169,7 @@ export function Notifications() {
 }
 
 /** The row at the top of the list for turning desktop notifications on or off. */
-function DesktopNotificationsSetting() {
+export function DesktopNotificationsSetting() {
   const { status, turnOn, turnOff } = useDesktopNotifications();
   if (status === "unsupported") return null;
 
@@ -256,7 +264,7 @@ function Popup({
   }, [notification.id, onDismiss]);
 
   return (
-    <div className="pointer-events-auto flex items-start gap-3 rounded-xl border border-line bg-white p-3 shadow-lg">
+    <div className="pointer-events-auto flex items-start gap-3 rounded-xl border border-line bg-surface p-3 shadow-lg">
       <KindIcon kind={notification.kind} />
       <button
         type="button"

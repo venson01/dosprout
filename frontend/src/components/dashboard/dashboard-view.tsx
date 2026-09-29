@@ -45,7 +45,7 @@ export function DashboardView() {
       {loadState === "loading" && <LoadingSkeleton label="Loading dashboard" />}
       {loadState === "error" && <LoadError message={loadError} onRetry={reload} />}
       {loadState === "ready" && tasks.length === 0 && (
-        <div className="rounded-xl border border-line bg-white p-10 text-center">
+        <div className="rounded-xl border border-line bg-surface p-10 text-center">
           <h2 className="text-lg font-semibold">No tasks yet</h2>
           <p className="mt-1 text-sm text-muted">Add a few tasks and your progress will show up here.</p>
           <Link
@@ -116,7 +116,7 @@ const CARD_ENTRANCE = "animate-card-in motion-reduce:animate-none";
  * "Open tasks by ..." cards don't.)
  */
 const CARD_EFFECTS =
-  "group block rounded-xl border border-line bg-white outline-none transition duration-200 " +
+  "group block rounded-xl border border-line bg-surface outline-none transition duration-200 " +
   "hover:-translate-y-1 hover:border-brand hover:shadow-lg hover:shadow-brand/10 " +
   "focus-visible:ring-2 focus-visible:ring-brand " +
   "motion-reduce:transition-none motion-reduce:hover:translate-y-0 " +
@@ -146,7 +146,7 @@ function Card({
   return (
     <section
       id={id}
-      className={`h-full scroll-mt-20 rounded-xl border border-line bg-white p-4 sm:p-5 ${className}`}
+      className={`h-full scroll-mt-20 rounded-xl border border-line bg-surface p-4 sm:p-5 ${className}`}
       style={delay === undefined ? undefined : { animationDelay: `${delay}ms` }}
     >
       <div className="mb-4 flex items-baseline justify-between gap-3">
@@ -309,7 +309,8 @@ function NeedsAttention({ tasks, now, onOpen }: { tasks: Task[]; now: number; on
 /** Tasks completed per day, week or month (the chart is shared with the Time page). */
 function CompletedChart({ tasks, now }: { tasks: Task[]; now: number }) {
   const [period, choose] = usePeriodParam("/dashboard");
-  const columns = completedPer(tasks, now, period);
+  const { settings } = useTaskList();
+  const columns = completedPer(tasks, now, period, settings.weekStartsOn);
   const total = columns.reduce((sum, column) => sum + column.value, 0);
 
   return (
@@ -321,6 +322,7 @@ function CompletedChart({ tasks, now }: { tasks: Task[]; now: number }) {
         formatValue={String}
         valueLabel="done"
         description="Tasks completed"
+        weekStartsOn={settings.weekStartsOn}
       />
     </Card>
   );

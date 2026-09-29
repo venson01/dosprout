@@ -1,4 +1,4 @@
-import { addDays, startOfDay } from "./calendar";
+import { addDays, startOfDay, type WeekStart } from "./calendar";
 import { sumPer, type Period } from "./periods";
 import type { Priority, Task } from "./types";
 
@@ -48,12 +48,13 @@ export function needsAttention(tasks: Task[], now: number) {
  * How many tasks were completed in each of the last few days, weeks or months
  * (see PERIODS in lib/periods.ts), oldest first.
  */
-export function completedPer(tasks: Task[], now: number, period: Period) {
+export function completedPer(tasks: Task[], now: number, period: Period, weekStartsOn: WeekStart) {
   const completed = tasks.filter((task) => task.status === "done" && task.completedAt);
   return sumPer(
     completed.map((task) => ({ at: Date.parse(task.completedAt!), value: 1 })),
     now,
     period,
+    weekStartsOn,
   );
 }
 

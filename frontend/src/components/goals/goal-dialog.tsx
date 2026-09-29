@@ -14,7 +14,7 @@ interface GoalDialogProps {
 }
 
 const inputClass =
-  "w-full rounded-lg border border-line bg-white px-3 py-2 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-brand/20";
+  "w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-brand/20";
 
 /**
  * Pop-up form for creating or editing a goal: title, description, color and an
@@ -66,7 +66,7 @@ export function GoalDialog({ goal, onSave, onDelete, onClose }: GoalDialogProps)
         event.preventDefault();
         onClose();
       }}
-      className="m-auto w-[calc(100%-2rem)] max-w-md rounded-2xl bg-white p-0 text-ink shadow-2xl"
+      className="m-auto w-[calc(100%-2rem)] max-w-md rounded-2xl bg-surface p-0 text-ink shadow-2xl"
     >
       <form onSubmit={handleSubmit} className="flex max-h-[85dvh] flex-col">
         <div className="flex items-center justify-between border-b border-line px-5 py-4">
@@ -122,7 +122,7 @@ export function GoalDialog({ goal, onSave, onDelete, onClose }: GoalDialogProps)
                   key={option}
                   // The whole swatch is the clickable label of a hidden radio button, so the
                   // keyboard (Tab + arrow keys) and screen readers work as usual.
-                  className={`grid size-9 cursor-pointer place-items-center rounded-full ${GOAL_COLOR_CLASSES[option].fill} ring-offset-2 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-brand ${
+                  className={`grid size-9 cursor-pointer place-items-center rounded-full ${GOAL_COLOR_CLASSES[option].fill} ring-offset-2 ring-offset-surface has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-brand ${
                     color === option ? "ring-2 ring-ink" : ""
                   }`}
                 >

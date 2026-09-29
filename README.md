@@ -32,6 +32,9 @@ deployed on Vercel). The design is based on [moodboard/inspo.png](moodboard/insp
 - **Notifications** (the bell at the top): when a task starts, a day before it's due, and when
   it's done. Turn on **desktop notifications** in the bell's list to get them while you're in
   another tab or app (DoSprout needs to stay open in a tab).
+- **Settings**: light / dark / system theme, focus and break lengths, which day weeks start on,
+  which notifications to show, defaults for new tasks (times, priority, suggested tags), and
+  **backups**: download everything as a file, restore from one, or delete all data.
 - Search, and sorting by start date, due date or priority.
 - Works on phones, tablets and desktops.
 
@@ -112,7 +115,8 @@ Restart `npm run dev` after changing them.
   or change the port in the `.env` files.
 - **A task can't be ticked off as done**: it still has unfinished subtasks. Tick those off first
   (the last one marks the task done by itself).
-- **No desktop notifications**: check that they're turned on in the bell's list, that your browser
+- **Lost data after a mistake?** If you downloaded a backup (Settings → Data), restore it there.
+- **No desktop notifications**: check that they're turned on in the bell's list or in Settings, that your browser
   allows notifications for the site, and that Windows **Focus / Do Not Disturb** is off.
   DoSprout has to be open in a tab.
 - **`node:sqlite` not found** (when running `npm test`): your Node.js is too old.

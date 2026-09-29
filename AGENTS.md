@@ -10,8 +10,8 @@ Humans should start with [README.md](README.md).
 - The owner is a **beginner**. Keep code simple and readable, prefer plain solutions over clever ones,
   add short comments that explain *why*, and explain your changes in plain language.
   Don't add new libraries unless they clearly pay for themselves, and say why when you do.
-- Pages: **Dashboard**, **Tasks** (list + board), **Goals**, **Time**, **Calendar**, and a
-  "Coming soon" placeholder for Settings.
+- Pages: **Dashboard**, **Tasks** (list + board), **Goals**, **Time**, **Calendar**, **Settings**.
+  (The "Coming soon" placeholder route `app/[section]` was removed once every page existed.)
   There is no login: everyone using the same backend shares one task list.
 
 ## Stack
@@ -75,9 +75,12 @@ backend/src/
   task-store.ts      TaskStore class: all task SQL (+ statusFromSubtasks, hasUnfinishedSubtasks, NOW)
   goal-store.ts      GoalStore class: all goal SQL
   time-store.ts      TimeStore class: all time-entry SQL (start / stop timer, manual entries)
+  settings-store.ts  SettingsStore: the settings, one JSON object in a one-row table (withDefaults)
+  backup-store.ts    BackupStore: export everything, import a backup (replaces all), delete all
   routes/tasks.ts    task HTTP routes + JSON-schema validation
   routes/goals.ts    goal HTTP routes + JSON-schema validation
   routes/time.ts     time-entry HTTP routes + JSON-schema validation
+  routes/settings.ts settings, /export, /import (with the backup's JSON schema), /data
   types.ts           API data types (source of truth)
   copy-tasks.ts      copyTasks(): copies all tasks, subtasks, goals and time entries between two
                      databases (keeps ids)
@@ -87,15 +90,17 @@ frontend/
   next.config.ts     forwards /api to the backend while developing (not on Vercel)
 frontend/src/
   app/               pages: / (redirects to /tasks), /dashboard, /tasks, /goals, /time, /calendar,
-                     /[section] (coming-soon pages), layout.tsx
+                     /settings, layout.tsx (theme script in <head>)
   components/layout/ AppShell, Sidebar, TopBar (search box), Notifications (bell, list, pop-ups),
-                     TimerPill (the running timer / break in the top bar)
+                     TimerPill (the running timer / break in the top bar), ThemeSync
   components/tasks/  TasksView (page logic), ListView, BoardView, TaskDialog, TaskMenu, badges,
                      task-actions (types), feedback (ErrorToast, LoadError, LoadingSkeleton;
                      shared with the calendar)
   components/calendar/ CalendarView: month grid, task bars from start day to due day, drag to move
   components/goals/  GoalsView (one card per goal: progress, target date, its tasks), GoalDialog
   components/time/   TimeView (now card, tracked-time chart, time per task, entry log), EntryDialog
+  components/settings/ SettingsView: appearance, timer & calendar, notifications, task defaults, data
+  components/inline-script.tsx  a <script> that runs before the first paint (theme)
   components/charts/ PeriodChart + usePeriodParam: the column chart with the Day/Week/Month switch
                      (Dashboard "Completed" and Time "Tracked time")
   components/dashboard/ DashboardView: summary cards, needs attention, completed-per-day chart,
@@ -119,7 +124,8 @@ frontend/src/
   lib/calendar.ts    local-day helpers: monthWeeks, taskDays, weekBars (bar rows), shiftTimestamp
   lib/dashboard.ts   the Dashboard's numbers: summarize, needsAttention, completedPer, openBy*
   lib/periods.ts     Period (day/week/month), PERIODS, periodStart, sumPer (for both charts)
-  lib/time.ts        durations, formatDuration / formatClock, trackedByTask, trackedPer, FOCUS_MINUTES
+  lib/time.ts        durations, formatDuration / formatClock, trackedByTask, trackedPer
+  lib/theme.ts       THEME_STORAGE_KEY + THEME_SCRIPT (shared by the server layout and ThemeSync)
   lib/goals.ts       goal colors (GOAL_COLOR_CLASSES), goalProgress, targetStatus, sortGoals
 ```
 
@@ -150,6 +156,11 @@ Base URL `/api` (locally also `http://localhost:4000/api`). JSON in and out. Err
 | POST   | `/time-entries`                      | `startedAt`, `endedAt` (required), `taskId`, `note` (added by hand) | `TimeEntry` (201) |
 | PATCH  | `/time-entries/:id`                  | `taskId`, `startedAt`, `endedAt`, `note`          | `TimeEntry`      |
 | DELETE | `/time-entries/:id`                  |                                                   | 204              |
+| GET    | `/settings`                          |                                                   | `Settings` (defaults filled in) |
+| PATCH  | `/settings`                          | any settings (`notifications` merges per kind)    | `Settings`       |
+| GET    | `/export`                            |                                                   | `Backup` (everything) |
+| POST   | `/import`                            | a `Backup` (up to 20 MB); REPLACES all data       | `{ ok: true }`   |
+| DELETE | `/data`                              | deletes all tasks, goals, time (settings stay)    | 204              |
 
 400 errors, besides invalid bodies: `dueAt` earlier than `startAt`, `status: "done"` while the
 task has unfinished subtasks (on POST: `status: "done"` together with `subtasks`), a `goalId`
@@ -261,6 +272,32 @@ Data model:
   field (hours + minutes) and shows "Tracked so far".
 - Manual entries (EntryDialog) start and end on the same day.
 
+## Settings and dark mode
+
+- `Settings` (see `types.ts`): `theme` (system / light / dark), `focusMinutes`, `breakMinutes`,
+  `weekStartsOn` (0 Sunday / 1 Monday), `notifications` (started / dueSoon / done / focus),
+  `defaultStartTime`, `defaultDueTime`, `defaultPriority`, `tagSuggestions`. Saved on the server
+  (shared by everyone, no accounts). `DEFAULT_SETTINGS` exists in both `types.ts` files, and
+  `withDefaults` fills in settings added later, so adding a setting needs no migration.
+- Read settings with `useTaskList().settings`; change them with `saveSettings(partial)` (the
+  screen updates first). Don't hard-code what's a setting: week start is a parameter of
+  `monthWeeks`, `weekdayLabels`, `periodStart`, `sumPer`, `completedPer`, `trackedPer`; focus /
+  break lengths come from settings in `useTimer`, TimerPill and the Time page.
+- **Dark mode is only colors.** `globals.css` redefines every `--color-*` token for
+  `:root[data-theme="dark"]` and for `prefers-color-scheme: dark` when data-theme isn't "light"
+  (the same values twice, keep them in sync). So: use `bg-surface` (not `bg-white`) for cards,
+  dialogs and inputs, and `bg-inverse` (not `bg-ink`) for dark tooltips / toasts with white text.
+  `text-white` is fine on colored fills (brand buttons, the always-dark sidebar). The dark goal
+  colors passed the dataviz validator on a dark surface.
+- No white flash: `THEME_SCRIPT` runs in `<head>` (via `InlineScript`, the pattern from the Next.js
+  guide "Preventing flash before hydration") and applies the theme copy from localStorage;
+  `<html suppressHydrationWarning>`. `ThemeSync` applies the server setting once loaded and
+  updates the copy.
+- Backups: `GET /export` = `{ app, version: 1, settings, goals, tasks (with subtasks), timeEntries }`.
+  `POST /import` validates it with a JSON schema and checks that links (task → goal, entry → task)
+  point inside the file, then replaces everything in one batch (ids kept). The Settings page's
+  "Delete all" needs `DELETE` typed first.
+
 ## Deployed on Vercel (read before changing the backend setup)
 
 - ONE Vercel project with Vercel Services ([vercel.json](vercel.json)): `/api/(.*)` goes to the
@@ -291,8 +328,8 @@ Data model:
   Never edit or reorder existing migrations, because people's databases have already run them.
   Statements are split on `;`, so don't put `;` inside text values. The version lives in the
   `schema_version` table (older local databases used `PRAGMA user_version`, which is read once).
-- Keep SQL in the stores (`TaskStore`, `GoalStore`, `TimeStore`). Keep route handlers thin. Validate
-  every request body with a JSON schema.
+- Keep SQL in the stores (`TaskStore`, `GoalStore`, `TimeStore`, `SettingsStore`, `BackupStore`).
+  Keep route handlers thin. Validate every request body with a JSON schema.
 - Store methods are `async` (the database may be in the cloud), so `await` them.
   Writes that must happen together go in one `db.batch([...], "write")`, which is a transaction
   and only one trip to the database.
@@ -304,7 +341,8 @@ Data model:
 - React's lint rules forbid impure calls like `Date.now()` during render: use `now` from
   `useTaskList()`, or call them in event handlers and effects.
 - Styling: Tailwind utility classes only. Colors come from the tokens in `frontend/src/app/globals.css`
-  (`bg-brand`, `text-muted`, `bg-high-bg`, `border-line`, ...). Add a new token rather than hard-coding hex values.
+  (`bg-brand`, `bg-surface`, `text-muted`, `bg-high-bg`, `border-line`, ...). Add a new token (with a
+  dark value in both dark blocks) rather than hard-coding hex values. Check new UI in both themes.
   The font is Poppins.
 - UI must work from 375px phones to desktop with no sideways page scrolling. The sidebar becomes a drawer below `lg`.
 - Accessibility: real `<button>`s, `aria-label` on icon-only buttons, visible focus rings,
@@ -318,10 +356,10 @@ Data model:
 ## Not built yet (possible next steps)
 
 - User accounts and login (the sidebar "Log Out" is disabled, and the top bar shows "Guest").
-- The Settings page (it currently shows "Coming soon"), e.g. to change the focus / break lengths.
 - Live updates between browsers: each page loads the data once (and the timer re-syncs on
   start / stop), so changes made elsewhere show after a reload.
 - Reordering cards within a board column (drag & drop currently only changes the column).
 - Notifications while the browser is closed (web push).
-- File attachments (shown in the moodboard) and dark mode.
+- File attachments (shown in the moodboard).
+- Per-person settings (they're shared until there are accounts).
 - Frontend tests (e.g. Vitest + Testing Library, or Playwright).

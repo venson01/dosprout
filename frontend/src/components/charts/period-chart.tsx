@@ -41,11 +41,11 @@ function columnName(start: Date, period: Period): string {
   return start.toLocaleDateString("en-US", { month: "long", year: "numeric" });
 }
 
-const CAPTIONS: Record<Period, string> = {
-  day: "Day of the month.",
-  week: "Weeks start on Monday; each column shows the week's first day.",
-  month: "Month.",
-};
+function caption(period: Period, weekStartsOn: 0 | 1): string {
+  if (period === "day") return "Day of the month.";
+  if (period === "month") return "Month.";
+  return `Weeks start on ${weekStartsOn === 0 ? "Sunday" : "Monday"}; each column shows the week's first day.`;
+}
 
 interface PeriodChartProps {
   /** One column per day / week / month, oldest first (see sumPer in lib/periods.ts). */
@@ -60,6 +60,8 @@ interface PeriodChartProps {
   description: string;
   /** The smallest top of the scale, so an empty or nearly empty chart still reads well. Default 1. */
   minScale?: number;
+  /** The "week starts on" setting, for the caption (0 = Sunday, 1 = Monday). */
+  weekStartsOn: 0 | 1;
 }
 
 /**
@@ -76,6 +78,7 @@ export function PeriodChart({
   valueLabel,
   description,
   minScale = 1,
+  weekStartsOn,
 }: PeriodChartProps) {
   // The top of the scale: at least minScale, so an empty chart still has an axis.
   const max = Math.max(minScale, ...columns.map((column) => column.value));
@@ -93,7 +96,7 @@ export function PeriodChart({
             aria-pressed={period === option}
             onClick={() => onPeriodChange(option)}
             className={`rounded-md px-3 py-1 text-sm transition-colors ${
-              period === option ? "bg-brand text-white shadow-sm" : "text-ink hover:bg-white"
+              period === option ? "bg-brand text-white shadow-sm" : "text-ink hover:bg-surface"
             }`}
           >
             {PERIODS[option].label}
@@ -140,7 +143,7 @@ export function PeriodChart({
                   </span>
                 )}
                 <span
-                  className={`pointer-events-none absolute bottom-full z-10 mb-1 hidden whitespace-nowrap rounded-md bg-ink px-2 py-1 text-xs text-white shadow group-hover:block ${tipPosition}`}
+                  className={`pointer-events-none absolute bottom-full z-10 mb-1 hidden whitespace-nowrap rounded-md bg-inverse px-2 py-1 text-xs text-white shadow group-hover:block ${tipPosition}`}
                 >
                   {columnName(start, period)}: {formatValue(value)} {valueLabel}
                 </span>
@@ -156,7 +159,7 @@ export function PeriodChart({
           })}
         </div>
       </div>
-      <p className="mt-8 text-xs text-muted">{CAPTIONS[period]} Hover a column for details.</p>
+      <p className="mt-8 text-xs text-muted">{caption(period, weekStartsOn)} Hover a column for details.</p>
       {/* The same numbers for screen readers. */}
       <table className="sr-only">
         <caption>

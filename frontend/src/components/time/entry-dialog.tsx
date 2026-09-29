@@ -16,7 +16,7 @@ interface EntryDialogProps {
 }
 
 const inputClass =
-  "w-full rounded-lg border border-line bg-white px-3 py-2 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-brand/20";
+  "w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-brand/20";
 
 /** Today as "2026-09-29" (for a new entry's date). */
 function today() {
@@ -84,7 +84,7 @@ export function EntryDialog({ entry, onSave, onDelete, onClose }: EntryDialogPro
         event.preventDefault();
         onClose();
       }}
-      className="m-auto w-[calc(100%-2rem)] max-w-md rounded-2xl bg-white p-0 text-ink shadow-2xl"
+      className="m-auto w-[calc(100%-2rem)] max-w-md rounded-2xl bg-surface p-0 text-ink shadow-2xl"
     >
       <form onSubmit={handleSubmit} className="flex max-h-[85dvh] flex-col">
         <div className="flex items-center justify-between border-b border-line px-5 py-4">

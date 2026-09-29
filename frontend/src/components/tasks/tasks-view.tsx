@@ -105,7 +105,7 @@ export function TasksView() {
                 aria-pressed={view === option}
                 onClick={() => setView(option)}
                 className={`rounded-md px-4 py-1.5 text-sm capitalize transition-colors ${
-                  view === option ? "bg-brand text-white shadow-sm" : "text-ink hover:bg-white"
+                  view === option ? "bg-brand text-white shadow-sm" : "text-ink hover:bg-surface"
                 }`}
               >
                 {option}
@@ -188,7 +188,7 @@ function SortMenu({ value, onChange }: { value: SortMode; onChange: (mode: SortM
         aria-label={`Sort tasks (now: ${SORT_LABELS[value]})`}
         aria-haspopup="menu"
         aria-expanded={open}
-        className={`grid size-10 place-items-center rounded-lg ring-1 ring-line hover:bg-white ${
+        className={`grid size-10 place-items-center rounded-lg ring-1 ring-line hover:bg-surface ${
           value !== "manual" ? "bg-brand-soft text-brand" : "bg-page text-brand"
         }`}
       >
@@ -197,7 +197,7 @@ function SortMenu({ value, onChange }: { value: SortMode; onChange: (mode: SortM
       {open && (
         <div
           role="menu"
-          className="absolute right-0 top-full z-30 mt-1 w-44 rounded-lg border border-line bg-white py-1 text-sm shadow-lg"
+          className="absolute right-0 top-full z-30 mt-1 w-44 rounded-lg border border-line bg-surface py-1 text-sm shadow-lg"
         >
           <p className="px-3 pb-1 pt-1.5 text-xs text-muted">Sort by</p>
           {(Object.keys(SORT_LABELS) as SortMode[]).map((mode) => (

@@ -52,7 +52,7 @@ export function TaskMenu({ task, onEdit, onMove, onDelete }: TaskMenuProps) {
       {open && (
         <div
           role="menu"
-          className="absolute right-0 top-full z-30 mt-1 w-44 rounded-lg border border-line bg-white py-1 text-sm shadow-lg"
+          className="absolute right-0 top-full z-30 mt-1 w-44 rounded-lg border border-line bg-surface py-1 text-sm shadow-lg"
         >
           <MenuItem onClick={() => choose(onEdit)}>Edit</MenuItem>
           <MenuItem

@@ -3,14 +3,16 @@ import type { Task } from "./types";
 // Date helpers for the Calendar page. Every "day" here is a day in the viewer's
 // own timezone, starting at midnight, because that's how a calendar reads.
 
-/** 1 = weeks start on Monday. Change to 0 for Sunday. */
-export const WEEK_STARTS_ON = 1;
+/** The day weeks start on: 0 = Sunday, 1 = Monday (the "week starts on" setting). */
+export type WeekStart = 0 | 1;
 
 /** "Mon", "Tue", ... in the order the calendar shows them. */
-export const WEEKDAY_LABELS = Array.from({ length: 7 }, (_, i) =>
-  // Jan 3, 2021 was a Sunday; count on from there to the right weekday.
-  new Date(2021, 0, 3 + WEEK_STARTS_ON + i).toLocaleDateString("en-US", { weekday: "short" }),
-);
+export function weekdayLabels(weekStartsOn: WeekStart): string[] {
+  return Array.from({ length: 7 }, (_, i) =>
+    // Jan 3, 2021 was a Sunday; count on from there to the right weekday.
+    new Date(2021, 0, 3 + weekStartsOn + i).toLocaleDateString("en-US", { weekday: "short" }),
+  );
+}
 
 const pad = (n: number) => String(n).padStart(2, "0");
 
@@ -60,9 +62,9 @@ export function shiftTimestamp(timestamp: string | null, days: number): string |
 }
 
 /** The weeks to show for a month: 4 to 6 rows of 7 days, padded with days of the months around it. */
-export function monthWeeks(month: Date): Date[][] {
+export function monthWeeks(month: Date, weekStartsOn: WeekStart): Date[][] {
   const first = new Date(month.getFullYear(), month.getMonth(), 1);
-  let day = addDays(first, -((first.getDay() - WEEK_STARTS_ON + 7) % 7));
+  let day = addDays(first, -((first.getDay() - weekStartsOn + 7) % 7));
   const weeks: Date[][] = [];
   do {
     const week: Date[] = [];

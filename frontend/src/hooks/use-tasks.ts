@@ -8,13 +8,16 @@ import type {
   CreateTimeEntryInput,
   Goal,
   Priority,
+  Settings,
   StartTimerInput,
   Status,
   Task,
   TimeEntry,
+  UpdateSettingsInput,
   UpdateTaskInput,
   UpdateTimeEntryInput,
 } from "@/lib/types";
+import { DEFAULT_SETTINGS } from "@/lib/types";
 
 /** What the task editor dialog works with before anything is saved. */
 export interface TaskDraft {
@@ -60,6 +63,8 @@ export function useTasks() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
   const [timeEntries, setTimeEntries] = useState<TimeEntry[]>([]);
+  // The defaults until the real settings have loaded.
+  const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [loadError, setLoadError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
@@ -67,12 +72,13 @@ export function useTasks() {
   useEffect(() => {
     let cancelled = false;
     // All at once: pages show a task's goal and its tracked time next to it.
-    Promise.all([api.listTasks(), api.listGoals(), api.listTimeEntries()]).then(
-      ([taskList, goalList, entryList]) => {
+    Promise.all([api.listTasks(), api.listGoals(), api.listTimeEntries(), api.getSettings()]).then(
+      ([taskList, goalList, entryList, savedSettings]) => {
         if (cancelled) return;
         setTasks(taskList);
         setGoals(goalList);
         setTimeEntries(entryList);
+        setSettings(savedSettings);
         setLoadState("ready");
       },
       (error: Error) => {
@@ -253,10 +259,30 @@ export function useTasks() {
     setTimeEntries((list) => list.filter((e) => e.id !== id));
   }, []);
 
+  /**
+   * Changes some settings. The screen updates right away (e.g. the theme switches);
+   * if saving fails, the saved settings are loaded again and the error is passed on.
+   */
+  const saveSettings = useCallback(async (input: UpdateSettingsInput) => {
+    setSettings((current) => ({
+      ...current,
+      ...input,
+      notifications: { ...current.notifications, ...input.notifications },
+    }));
+    try {
+      setSettings(await api.updateSettings(input));
+    } catch (error) {
+      api.getSettings().then(setSettings, () => {});
+      throw error;
+    }
+  }, []);
+
   return {
     tasks,
     goals,
     timeEntries,
+    settings,
+    saveSettings,
     loadState,
     loadError,
     reload,

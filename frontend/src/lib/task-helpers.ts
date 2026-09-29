@@ -12,7 +12,6 @@ export const PRIORITY_LABELS: Record<Priority, string> = {
   high: "High",
 };
 
-export const TAG_SUGGESTIONS = ["Work", "Health", "Personal", "Study", "Home"];
 
 export type SortMode = "manual" | "startAt" | "dueAt" | "priority";
 

@@ -1,12 +1,10 @@
-import { dayKey } from "./calendar";
+import { dayKey, type WeekStart } from "./calendar";
 import { sumPer, type Period } from "./periods";
 import type { Task, TimeEntry } from "./types";
 
 // Helpers for tracked time (time entries). Durations are in milliseconds.
 
-/** A focus (Pomodoro) session lasts this long, then a break of BREAK_MINUTES starts. */
-export const FOCUS_MINUTES = 25;
-export const BREAK_MINUTES = 5;
+// Focus (Pomodoro) and break lengths are settings: settings.focusMinutes / breakMinutes.
 export const MINUTE_MS = 60_000;
 
 /** The timer that's running right now (there's at most one), or undefined. */
@@ -51,11 +49,12 @@ export function trackedByTask(entries: TimeEntry[], now: number): Map<number, nu
  * Tracked time per day / week / month, in milliseconds (for the Time page's chart).
  * An entry counts on the day it started, even if it ran past midnight.
  */
-export function trackedPer(entries: TimeEntry[], now: number, period: Period) {
+export function trackedPer(entries: TimeEntry[], now: number, period: Period, weekStartsOn: WeekStart) {
   return sumPer(
     entries.map((entry) => ({ at: Date.parse(entry.startedAt), value: entryDuration(entry, now) })),
     now,
     period,
+    weekStartsOn,
   );
 }
 

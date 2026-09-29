@@ -10,7 +10,7 @@ import { copyTasks, TargetNotEmptyError } from "./copy-tasks.js";
 import { openDatabase } from "./db.js";
 import { TaskStore } from "./task-store.js";
 import { GoalStore } from "./goal-store.js";
-import type { Goal, Task, TimeEntry } from "./types.js";
+import { DEFAULT_SETTINGS, type Backup, type Goal, type Settings, type Task, type TimeEntry } from "./types.js";
 
 // Every test gets a fresh, empty in-memory database.
 let app: FastifyInstance;
@@ -472,6 +472,97 @@ describe("time tracking API", () => {
       payload: { estimateMinutes: 12.5 },
     });
     assert.equal(invalid.statusCode, 400);
+  });
+});
+
+describe("settings and backups API", () => {
+  test("settings start with defaults and can be changed one at a time", async () => {
+    const initial = (await app.inject({ method: "GET", url: "/api/settings" })).json() as Settings;
+    assert.deepEqual(initial, DEFAULT_SETTINGS);
+
+    const changed = await app.inject({
+      method: "PATCH",
+      url: "/api/settings",
+      payload: { theme: "dark", focusMinutes: 50, notifications: { dueSoon: false } },
+    });
+    assert.equal(changed.statusCode, 200);
+    const settings = changed.json() as Settings;
+    assert.equal(settings.theme, "dark");
+    assert.equal(settings.focusMinutes, 50);
+    // Only dueSoon changed; the other notification kinds stay on.
+    assert.deepEqual(settings.notifications, { started: true, dueSoon: false, done: true, focus: true });
+    assert.equal(settings.breakMinutes, 5);
+
+    const again = (await app.inject({ method: "GET", url: "/api/settings" })).json() as Settings;
+    assert.deepEqual(again, settings, "saved");
+  });
+
+  test("rejects invalid settings", async () => {
+    for (const payload of [
+      {},
+      { theme: "blue" },
+      { focusMinutes: 2 },
+      { weekStartsOn: 3 },
+      { defaultDueTime: "5pm" },
+      { tagSuggestions: ["Work", "Work"] },
+    ]) {
+      const response = await app.inject({ method: "PATCH", url: "/api/settings", payload });
+      assert.equal(response.statusCode, 400, JSON.stringify(payload));
+    }
+  });
+
+  test("exports everything and imports it back exactly", async () => {
+    const goal = (await app.inject({ method: "POST", url: "/api/goals", payload: { title: "Ship it" } })).json() as Goal;
+    const task = await createTask({ title: "Write docs", goalId: goal.id, subtasks: ["Intro"], estimateMinutes: 60 });
+    await app.inject({
+      method: "POST",
+      url: "/api/time-entries",
+      payload: { taskId: task.id, startedAt: "2026-09-01T09:00:00Z", endedAt: "2026-09-01T10:00:00Z" },
+    });
+    await app.inject({ method: "PATCH", url: "/api/settings", payload: { weekStartsOn: 0 } });
+
+    const exported = (await app.inject({ method: "GET", url: "/api/export" })).json() as Backup;
+    assert.equal(exported.app, "DoSprout");
+    assert.equal(exported.tasks.length, 1);
+
+    // Wipe everything, then restore it.
+    assert.equal((await app.inject({ method: "DELETE", url: "/api/data" })).statusCode, 204);
+    assert.deepEqual((await app.inject({ method: "GET", url: "/api/tasks" })).json(), []);
+    const imported = await app.inject({ method: "POST", url: "/api/import", payload: exported });
+    assert.equal(imported.statusCode, 200, imported.body);
+
+    const again = (await app.inject({ method: "GET", url: "/api/export" })).json() as Backup;
+    const withoutTime = (backup: Backup) => ({ ...backup, exportedAt: undefined });
+    assert.deepEqual(withoutTime(again), withoutTime(exported));
+  });
+
+  test("refuses a damaged backup and changes nothing", async () => {
+    await createTask({ title: "Keep me" });
+    const damaged = {
+      app: "DoSprout",
+      version: 1,
+      goals: [],
+      tasks: [],
+      timeEntries: [
+        { id: 1, taskId: 5, kind: "timer", startedAt: "2026-09-01T09:00:00Z", endedAt: null, note: "", createdAt: "2026-09-01T09:00:00Z" },
+      ],
+    };
+    const response = await app.inject({ method: "POST", url: "/api/import", payload: damaged });
+    assert.equal(response.statusCode, 400);
+    assert.match(response.json().message, /damaged/);
+    const notABackup = await app.inject({ method: "POST", url: "/api/import", payload: { hello: "world" } });
+    assert.equal(notABackup.statusCode, 400);
+
+    const tasks = (await app.inject({ method: "GET", url: "/api/tasks" })).json() as Task[];
+    assert.deepEqual(tasks.map((t) => t.title), ["Keep me"]);
+  });
+
+  test("deleting all data keeps the settings", async () => {
+    await createTask({ title: "Gone soon" });
+    await app.inject({ method: "PATCH", url: "/api/settings", payload: { theme: "light" } });
+    await app.inject({ method: "DELETE", url: "/api/data" });
+    assert.deepEqual((await app.inject({ method: "GET", url: "/api/tasks" })).json(), []);
+    assert.equal(((await app.inject({ method: "GET", url: "/api/settings" })).json() as Settings).theme, "light");
   });
 });
 
