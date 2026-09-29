@@ -31,6 +31,9 @@ Humans should start with [README.md](README.md).
   the backend crashes ("Cannot use import statement outside a module"). Without `dist/`, Vercel
   bundles `src/server.ts` itself as `.mjs`. Also keep TypeScript at 5.x in the backend: Vercel's
   builder type-checks with the project's TypeScript and fails with TypeScript 7.
+- No top-level `await` in `server.ts` (or anything it imports): Vercel loads the backend with
+  `require()`, which can't load such modules, and requests then hang. That's why `buildApp()` isn't
+  async and opens the database inside a Fastify plugin, and why `app.listen()` isn't awaited.
 - Turso is opened with `@libsql/client/web` (see `connect()` in `db.ts`). The default
   `@libsql/client` loads a native library that Vercel can't bundle; it's only used for local files.
   See "Deploy to Vercel" in README.md.

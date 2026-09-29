@@ -19,7 +19,7 @@ const corsOrigin = (process.env.CORS_ORIGIN ?? "http://localhost:3000")
   .split(",")
   .map((origin) => origin.trim());
 
-const app = await buildApp({
+const app = buildApp({
   databaseUrl,
   databaseAuthToken,
   seed: true,
@@ -27,12 +27,12 @@ const app = await buildApp({
   logger: { level: process.env.LOG_LEVEL ?? "info" },
 });
 
-try {
-  await app.listen({ port, host });
-} catch (error) {
+// Not awaited on purpose: Vercel loads this file with require(), which fails on a
+// top-level "await". listen() starts the server once the database is connected.
+app.listen({ port, host }).catch((error) => {
   app.log.error(error);
   process.exit(1);
-}
+});
 
 // Close the database cleanly when you press Ctrl+C.
 for (const signal of ["SIGINT", "SIGTERM"] as const) {

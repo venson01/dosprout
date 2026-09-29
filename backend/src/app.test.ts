@@ -15,7 +15,7 @@ import type { Task } from "./types.js";
 let app: FastifyInstance;
 
 beforeEach(async () => {
-  app = await buildApp({ databaseUrl: ":memory:" });
+  app = buildApp({ databaseUrl: ":memory:" });
 });
 
 afterEach(async () => {

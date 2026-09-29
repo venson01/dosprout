@@ -16,18 +16,17 @@ export interface AppOptions {
   logger?: FastifyServerOptions["logger"];
 }
 
-/** Builds the Fastify app without starting it, so tests can use it directly. */
-export async function buildApp(options: AppOptions) {
+/**
+ * Builds the Fastify app without starting it, so tests can use it directly.
+ * It returns right away (it isn't async), so server.ts needs no top-level
+ * "await", which Vercel can't load. The plugins registered here, including
+ * the database connection, run when Fastify starts: on app.listen(),
+ * app.ready() or the first app.inject().
+ */
+export function buildApp(options: AppOptions) {
   const app = Fastify({ logger: options.logger ?? false });
 
-  const db = await openDatabase({
-    url: options.databaseUrl,
-    authToken: options.databaseAuthToken,
-    seed: options.seed,
-  });
-  app.addHook("onClose", async () => db.close());
-
-  await app.register(cors, {
+  app.register(cors, {
     origin: options.corsOrigin ?? "http://localhost:3000",
     methods: ["GET", "POST", "PATCH", "DELETE"],
   });
@@ -37,7 +36,17 @@ export async function buildApp(options: AppOptions) {
     message: "Todo API is running. The tasks are at /api/tasks",
   }));
   app.get("/api/health", async () => ({ ok: true }));
-  await app.register(taskRoutes, { prefix: "/api", store: new TaskStore(db) });
+
+  // Opens the database, then adds the task routes that use it.
+  app.register(async (api) => {
+    const db = await openDatabase({
+      url: options.databaseUrl,
+      authToken: options.databaseAuthToken,
+      seed: options.seed,
+    });
+    api.addHook("onClose", async () => db.close());
+    await api.register(taskRoutes, { prefix: "/api", store: new TaskStore(db) });
+  });
 
   return app;
 }
