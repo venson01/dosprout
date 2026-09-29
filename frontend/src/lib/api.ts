@@ -1,7 +1,12 @@
 import type { CreateTaskInput, Task, UpdateTaskInput } from "./types";
 
-// Where the Fastify backend runs. Change it in frontend/.env.local if needed.
-export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+// The API lives at /api on the same address as the website:
+// - on Vercel, vercel.json sends /api/... to the backend service
+// - locally, next.config.ts forwards /api/... to the backend on port 4000
+// Only set NEXT_PUBLIC_API_URL if the backend is on a different domain.
+export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
+
+const UNREACHABLE = "Can't reach the API. Is the backend running?";
 
 export class ApiError extends Error {
   constructor(
@@ -21,11 +26,14 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     });
   } catch {
     // fetch only throws when the server can't be reached at all.
-    throw new ApiError(`Can't reach the API at ${API_URL}. Is the backend running?`);
+    throw new ApiError(UNREACHABLE);
   }
 
   if (!response.ok) {
     const body = await response.json().catch(() => null);
+    // Our API always answers errors with JSON. A server error without it means the
+    // request never reached the API (e.g. the local /api forwarding found no backend).
+    if (!body && response.status >= 500) throw new ApiError(UNREACHABLE, response.status);
     throw new ApiError(body?.message ?? `Request failed (${response.status})`, response.status);
   }
   return response.status === 204 ? (undefined as T) : response.json();

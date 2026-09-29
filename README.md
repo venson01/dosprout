@@ -83,7 +83,15 @@ Both apps work without any configuration. To change ports or URLs:
 
 ## Deploy to Vercel
 
-Vercel can host both parts, as **two Vercel projects** made from this one repository.
+The whole app deploys as **one Vercel project** using Vercel Services (beta, available on all
+plans). [vercel.json](vercel.json) defines two services and sends traffic to them:
+
+| Address                    | Goes to                         |
+| -------------------------- | ------------------------------- |
+| `/api/...`                 | `backend` (Fastify, `backend/`) |
+| everything else            | `frontend` (Next.js, `frontend/`) |
+
+Both share one domain, so the website simply calls `/api/...` (no CORS or API address to set up).
 Vercel can't keep a database file, so the deployed backend stores tasks in a free
 [Turso](https://turso.tech) database instead (Turso is SQLite in the cloud).
 
@@ -91,8 +99,9 @@ Before you start, push this repository to GitHub.
 
 **1. Create the database**
 
-1. Sign up at [turso.tech](https://turso.tech) and create a database (for example `todos`).
-2. Copy its **URL**. It looks like `libsql://todos-yourname.turso.io`.
+1. Sign up at [turso.tech](https://turso.tech) and create a database (for example `dosprout`).
+   Pick the region **AWS US East (Virginia)**, close to where Vercel runs the backend.
+2. Copy its **URL**. It looks like `libsql://dosprout-yourname.aws-us-east-1.turso.io`.
 3. Create a **token** for it and copy that too. Treat the token like a password.
 
 **Optional: move your local tasks to Turso.** Put the URL and token in `backend/.env`
@@ -105,33 +114,24 @@ npm run copy-to-turso
 If Turso already has tasks (e.g. the example tasks), it stops without changing anything.
 Run `npm run copy-to-turso -- --replace` to delete those and copy yours instead.
 
-**2. Deploy the backend**
+**2. Create the Vercel project**
 
 1. On [vercel.com](https://vercel.com), click **Add New → Project** and import the repository.
-2. Set **Root Directory** to `backend`. Vercel detects Fastify by itself.
-3. Under **Environment Variables**, add:
+   Leave **Root Directory** as the repository root: Vercel reads `vercel.json` and finds both services.
+2. Under **Environment Variables**, add:
    - `TURSO_DATABASE_URL` = the URL from step 1
    - `TURSO_AUTH_TOKEN` = the token from step 1
-4. Click **Deploy**. When it's done, copy the address (e.g. `https://dosprout-api.vercel.app`)
-   and open `<that address>/api/health`. You should see `{"ok":true}`.
+3. Click **Deploy**.
 
-The tables and example tasks are created automatically the first time the backend runs.
+**3. Check it**
 
-**3. Deploy the frontend**
+- `<your address>/api/health` should show `{"ok":true}`.
+- `<your address>/tasks` should show your tasks.
 
-1. Add another project from the **same** repository, with **Root Directory** set to `frontend`.
-2. Add the environment variable `NEXT_PUBLIC_API_URL` = the backend address from step 2
-   (no `/` at the end).
-3. Click **Deploy** and copy the website's address (e.g. `https://dosprout.vercel.app`).
+If you change an environment variable later, open **Deployments** and **Redeploy**, because
+changes only take effect after a new deployment.
 
-**4. Let the frontend talk to the backend**
-
-In the **backend** project, go to **Settings → Environment Variables**, add
-`CORS_ORIGIN` = the website address from step 3 (no `/` at the end), then open
-**Deployments** and **Redeploy** the latest one. Environment variable changes only take
-effect after a redeploy. The same goes for the frontend if you change `NEXT_PUBLIC_API_URL`.
-
-Open the website. If it says "Couldn't load your tasks", double-check the three addresses above.
+To try the deployed setup on your computer, install the Vercel CLI and run `vercel dev`
+in the repository root. It runs both services together, the same way as on Vercel.
 
 > The app has no login yet, so everyone who opens the website shares one task list.
-

@@ -23,7 +23,13 @@ Humans should start with [README.md](README.md).
 - Database: `@libsql/client` talks to a local file (`file:data/todos.db`, the default), a Turso
   cloud database (`libsql://...`, used on Vercel), or `:memory:` (tests). Set by `TURSO_DATABASE_URL`
   and `TURSO_AUTH_TOKEN`.
-- Deployed as two Vercel projects (Root Directory `backend` and `frontend`). See "Deploy to Vercel" in README.md.
+- Deployed as ONE Vercel project with Vercel Services ([vercel.json](vercel.json)): `/api/(.*)` goes to
+  the `backend` service, everything else to `frontend`. The backend sees the full path (`/api/tasks`).
+  No service bindings: the frontend only calls the API from the browser, not from server code.
+  See "Deploy to Vercel" in README.md.
+- The browser always calls `/api/...` on the website's own address (`lib/api.ts`). Locally,
+  `next.config.ts` forwards `/api` to `BACKEND_URL` (default http://localhost:4000); on Vercel,
+  vercel.json does the routing. `NEXT_PUBLIC_API_URL` is only for a backend on another domain.
 - **Next.js 16 differs from older versions.** Before writing Next.js code, read the matching guide in
   `frontend/node_modules/next/dist/docs/` (see also `frontend/AGENTS.md`, which `next dev` regenerates).
   For example, `params`/`searchParams` are Promises, and `useSearchParams()` needs a `<Suspense>` boundary.
@@ -74,7 +80,7 @@ frontend/src/
 
 ## API
 
-Base URL `http://localhost:4000/api`. JSON in and out. Errors look like
+Base URL `/api` (locally also `http://localhost:4000/api`). JSON in and out. Errors look like
 `{ "statusCode": 404, "error": "Not Found", "message": "Task not found" }`.
 
 | Method | Path                                 | Body                                              | Returns          |

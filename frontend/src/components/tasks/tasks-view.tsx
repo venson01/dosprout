@@ -5,7 +5,6 @@ import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useDismiss } from "@/hooks/use-dismiss";
 import { useTaskList } from "@/hooks/tasks-context";
-import { API_URL } from "@/lib/api";
 import { matchesSearch, SORT_LABELS, sortTasks, type SortMode } from "@/lib/task-helpers";
 import { STATUSES, type Status, type Task } from "@/lib/types";
 import { BoardView } from "./board-view";
@@ -245,9 +244,9 @@ function LoadError({ message, onRetry }: { message: string | null; onRetry: () =
       <h2 className="mt-3 text-lg font-semibold">Couldn&apos;t load your tasks</h2>
       <p className="mt-1 text-sm text-muted">{message}</p>
       <p className="mt-4 text-sm text-muted">
-        Make sure the backend is running at <code className="text-ink">{API_URL}</code>. In a
-        terminal, run <code className="rounded bg-page px-1.5 py-0.5 text-ink">cd backend</code>{" "}
-        then <code className="rounded bg-page px-1.5 py-0.5 text-ink">npm run dev</code>.
+        Make sure the backend is running. On your computer, run{" "}
+        <code className="rounded bg-page px-1.5 py-0.5 text-ink">npm run dev</code> in the project
+        folder (it starts the backend at http://localhost:4000).
       </p>
       <button
         type="button"
