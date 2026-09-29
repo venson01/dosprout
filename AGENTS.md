@@ -91,6 +91,8 @@ frontend/
 frontend/src/
   app/               pages: / (redirects to /tasks), /dashboard, /tasks, /goals, /time, /calendar,
                      /settings, layout.tsx (theme script in <head>)
+                     icon.svg: the browser-tab icon (the sidebar's Sprout icon, lighter blue on
+                     dark browsers); Next.js adds the <link rel="icon"> by itself
   components/layout/ AppShell, Sidebar, TopBar (search box), Notifications (bell, list, pop-ups),
                      TimerPill (the running timer / break in the top bar), ThemeSync
   components/tasks/  TasksView (page logic), ListView, BoardView, TaskDialog, TaskMenu, badges,
