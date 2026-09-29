@@ -26,6 +26,13 @@ Humans should start with [README.md](README.md).
 - Deployed as ONE Vercel project with Vercel Services ([vercel.json](vercel.json)): `/api/(.*)` goes to
   the `backend` service, everything else to `frontend`. The backend sees the full path (`/api/tasks`).
   No service bindings: the frontend only calls the API from the browser, not from server code.
+  The backend service's `buildCommand` is only a type check on purpose: if a build leaves `dist/`,
+  Vercel reuses it at the function root without `package.json`, so `"type": "module"` is lost and
+  the backend crashes ("Cannot use import statement outside a module"). Without `dist/`, Vercel
+  bundles `src/server.ts` itself as `.mjs`. Also keep TypeScript at 5.x in the backend: Vercel's
+  builder type-checks with the project's TypeScript and fails with TypeScript 7.
+- Turso is opened with `@libsql/client/web` (see `connect()` in `db.ts`). The default
+  `@libsql/client` loads a native library that Vercel can't bundle; it's only used for local files.
   See "Deploy to Vercel" in README.md.
 - The browser always calls `/api/...` on the website's own address (`lib/api.ts`). Locally,
   `next.config.ts` forwards `/api` to `BACKEND_URL` (default http://localhost:4000); on Vercel,
