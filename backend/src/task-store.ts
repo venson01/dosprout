@@ -23,6 +23,7 @@ interface TaskRow {
   updated_at: string;
   completed_at: string | null;
   goal_id: number | null;
+  estimate_minutes: number | null;
 }
 
 interface SubtaskRow {
@@ -58,6 +59,7 @@ function toTask(row: TaskRow, subtasks: Subtask[]): Task {
     updatedAt: row.updated_at,
     completedAt: row.completed_at,
     goalId: row.goal_id,
+    estimateMinutes: row.estimate_minutes,
     subtasks,
   };
 }
@@ -111,6 +113,7 @@ const UPDATABLE_TASK_COLUMNS = {
   startAt: "start_at",
   dueAt: "due_at",
   goalId: "goal_id",
+  estimateMinutes: "estimate_minutes",
   position: "position",
 } as const satisfies Record<keyof UpdateTaskInput, string>;
 
@@ -161,8 +164,8 @@ export class TaskStore {
     const [taskResult] = await this.db.batch(
       [
         {
-          sql: `INSERT INTO tasks (title, description, status, priority, tag, start_at, due_at, goal_id, position, completed_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ${NEXT_TASK_POSITION}, ${status === "done" ? NOW : "NULL"})`,
+          sql: `INSERT INTO tasks (title, description, status, priority, tag, start_at, due_at, goal_id, estimate_minutes, position, completed_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ${NEXT_TASK_POSITION}, ${status === "done" ? NOW : "NULL"})`,
           args: [
             input.title.trim(),
             input.description?.trim() ?? "",
@@ -172,6 +175,7 @@ export class TaskStore {
             toUtcTimestamp(input.startAt ?? null),
             toUtcTimestamp(input.dueAt ?? null),
             input.goalId ?? null,
+            input.estimateMinutes ?? null,
             status,
           ],
         },
@@ -224,13 +228,14 @@ export class TaskStore {
     return this.get(id);
   }
 
-  /** Returns false if no task had this id. Its subtasks are deleted too. */
+  /** Returns false if no task had this id. Its subtasks and tracked time are deleted too. */
   async delete(id: number): Promise<boolean> {
     // Delete the subtasks ourselves rather than relying on ON DELETE CASCADE,
     // because that only works when SQLite's foreign key checks are switched on.
-    const [, taskResult] = await this.db.batch(
+    const [, , taskResult] = await this.db.batch(
       [
         { sql: "DELETE FROM subtasks WHERE task_id = ?", args: [id] },
+        { sql: "DELETE FROM time_entries WHERE task_id = ?", args: [id] },
         { sql: "DELETE FROM tasks WHERE id = ?", args: [id] },
       ],
       "write",

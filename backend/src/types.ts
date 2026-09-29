@@ -40,6 +40,8 @@ export interface Task {
   completedAt: string | null;
   /** The goal this task belongs to, or null. */
   goalId: number | null;
+  /** How long the task should take, in minutes, or null. Compared with the tracked time. */
+  estimateMinutes: number | null;
   subtasks: Subtask[];
 }
 
@@ -52,6 +54,7 @@ export interface CreateTaskInput {
   startAt?: string | null;
   dueAt?: string | null;
   goalId?: number | null;
+  estimateMinutes?: number | null;
   /** Titles of subtasks to create together with the task. */
   subtasks?: string[];
 }
@@ -92,3 +95,41 @@ export interface CreateGoalInput {
 }
 
 export type UpdateGoalInput = Partial<CreateGoalInput>;
+
+/** How a time entry was made: a timer, a focus (Pomodoro) session, or added by hand. */
+export const TIME_ENTRY_KINDS = ["timer", "focus", "manual"] as const;
+export type TimeEntryKind = (typeof TIME_ENTRY_KINDS)[number];
+
+/** A stretch of time spent, on a task or on nothing in particular. */
+export interface TimeEntry {
+  id: number;
+  /** The task the time was spent on, or null. */
+  taskId: number | null;
+  kind: TimeEntryKind;
+  /** UTC ISO timestamps. endedAt is null while the timer is still running. */
+  startedAt: string;
+  endedAt: string | null;
+  note: string;
+  createdAt: string;
+}
+
+export interface StartTimerInput {
+  taskId?: number | null;
+  /** "focus" for a Pomodoro session. Default "timer". */
+  kind?: "timer" | "focus";
+}
+
+/** Time added by hand: it already has a start and an end. */
+export interface CreateTimeEntryInput {
+  taskId?: number | null;
+  startedAt: string;
+  endedAt: string;
+  note?: string;
+}
+
+export interface UpdateTimeEntryInput {
+  taskId?: number | null;
+  startedAt?: string;
+  endedAt?: string;
+  note?: string;
+}

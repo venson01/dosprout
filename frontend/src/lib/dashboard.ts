@@ -1,4 +1,5 @@
-import { addDays, dayKey, startOfDay, WEEK_STARTS_ON } from "./calendar";
+import { addDays, startOfDay } from "./calendar";
+import { sumPer, type Period } from "./periods";
 import type { Priority, Task } from "./types";
 
 // Numbers for the Dashboard page. They take `now` (milliseconds) as an argument
@@ -43,48 +44,17 @@ export function needsAttention(tasks: Task[], now: number) {
   };
 }
 
-/** How the "Completed" chart groups tasks: per day, per week or per month. */
-export type Period = "day" | "week" | "month";
-
-/** How many columns each period shows, and how that span is described. */
-export const PERIODS: Record<Period, { label: string; columns: number; span: string }> = {
-  day: { label: "Day", columns: 14, span: "14 days" },
-  week: { label: "Week", columns: 12, span: "12 weeks" },
-  month: { label: "Month", columns: 12, span: "12 months" },
-};
-
-/** The first day of the day / week / month that `date` falls in (weeks start on WEEK_STARTS_ON). */
-export function periodStart(date: Date, period: Period): Date {
-  const day = startOfDay(date);
-  if (period === "day") return day;
-  if (period === "week") return addDays(day, -((day.getDay() - WEEK_STARTS_ON + 7) % 7));
-  return new Date(day.getFullYear(), day.getMonth(), 1);
-}
-
-/** The start of the period `count` periods before `start`. */
-function periodsBefore(start: Date, period: Period, count: number): Date {
-  if (period === "day") return addDays(start, -count);
-  if (period === "week") return addDays(start, -7 * count);
-  return new Date(start.getFullYear(), start.getMonth() - count, 1);
-}
-
 /**
  * How many tasks were completed in each of the last few days, weeks or months
- * (see PERIODS), oldest first. The last column is the current day / week / month.
+ * (see PERIODS in lib/periods.ts), oldest first.
  */
 export function completedPer(tasks: Task[], now: number, period: Period) {
-  const counts = new Map<string, number>();
-  for (const task of tasks) {
-    if (task.status !== "done" || !task.completedAt) continue;
-    const key = dayKey(periodStart(new Date(task.completedAt), period));
-    counts.set(key, (counts.get(key) ?? 0) + 1);
-  }
-  const current = periodStart(new Date(now), period);
-  const columns = PERIODS[period].columns;
-  return Array.from({ length: columns }, (_, i) => {
-    const start = periodsBefore(current, period, columns - 1 - i);
-    return { start, count: counts.get(dayKey(start)) ?? 0 };
-  });
+  const completed = tasks.filter((task) => task.status === "done" && task.completedAt);
+  return sumPer(
+    completed.map((task) => ({ at: Date.parse(task.completedAt!), value: 1 })),
+    now,
+    period,
+  );
 }
 
 /** Unfinished tasks per priority, highest priority first. */

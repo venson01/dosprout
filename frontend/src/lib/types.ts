@@ -38,6 +38,8 @@ export interface Task {
   completedAt: string | null;
   /** The goal this task belongs to, or null. */
   goalId: number | null;
+  /** How long the task should take, in minutes, or null. */
+  estimateMinutes: number | null;
   subtasks: Subtask[];
 }
 
@@ -50,6 +52,7 @@ export interface CreateTaskInput {
   startAt?: string | null;
   dueAt?: string | null;
   goalId?: number | null;
+  estimateMinutes?: number | null;
   subtasks?: string[];
 }
 
@@ -77,3 +80,36 @@ export interface CreateGoalInput {
 }
 
 export type UpdateGoalInput = Partial<CreateGoalInput>;
+
+export const TIME_ENTRY_KINDS = ["timer", "focus", "manual"] as const;
+export type TimeEntryKind = (typeof TIME_ENTRY_KINDS)[number];
+
+/** A stretch of time spent, on a task or on nothing in particular. endedAt is null while running. */
+export interface TimeEntry {
+  id: number;
+  taskId: number | null;
+  kind: TimeEntryKind;
+  startedAt: string;
+  endedAt: string | null;
+  note: string;
+  createdAt: string;
+}
+
+export interface StartTimerInput {
+  taskId?: number | null;
+  kind?: "timer" | "focus";
+}
+
+export interface CreateTimeEntryInput {
+  taskId?: number | null;
+  startedAt: string;
+  endedAt: string;
+  note?: string;
+}
+
+export interface UpdateTimeEntryInput {
+  taskId?: number | null;
+  startedAt?: string;
+  endedAt?: string;
+  note?: string;
+}

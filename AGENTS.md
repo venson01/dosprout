@@ -10,8 +10,8 @@ Humans should start with [README.md](README.md).
 - The owner is a **beginner**. Keep code simple and readable, prefer plain solutions over clever ones,
   add short comments that explain *why*, and explain your changes in plain language.
   Don't add new libraries unless they clearly pay for themselves, and say why when you do.
-- Pages: **Dashboard**, **Tasks** (list + board), **Goals**, **Calendar**, and "Coming soon"
-  placeholders for the rest (Time, Settings).
+- Pages: **Dashboard**, **Tasks** (list + board), **Goals**, **Time**, **Calendar**, and a
+  "Coming soon" placeholder for Settings.
   There is no login: everyone using the same backend shares one task list.
 
 ## Stack
@@ -74,26 +74,36 @@ backend/src/
   db.ts              connect() + openDatabase(): runs MIGRATIONS, seeds example tasks on first run
   task-store.ts      TaskStore class: all task SQL (+ statusFromSubtasks, hasUnfinishedSubtasks, NOW)
   goal-store.ts      GoalStore class: all goal SQL
+  time-store.ts      TimeStore class: all time-entry SQL (start / stop timer, manual entries)
   routes/tasks.ts    task HTTP routes + JSON-schema validation
   routes/goals.ts    goal HTTP routes + JSON-schema validation
+  routes/time.ts     time-entry HTTP routes + JSON-schema validation
   types.ts           API data types (source of truth)
-  copy-tasks.ts      copyTasks(): copies all tasks, subtasks and goals between two databases (keeps ids)
+  copy-tasks.ts      copyTasks(): copies all tasks, subtasks, goals and time entries between two
+                     databases (keeps ids)
   scripts/copy-to-turso.ts  `npm run copy-to-turso`: local file -> Turso database in backend/.env
   app.test.ts        API tests using an in-memory database
 frontend/
   next.config.ts     forwards /api to the backend while developing (not on Vercel)
 frontend/src/
-  app/               pages: / (redirects to /tasks), /dashboard, /tasks, /goals, /calendar,
+  app/               pages: / (redirects to /tasks), /dashboard, /tasks, /goals, /time, /calendar,
                      /[section] (coming-soon pages), layout.tsx
-  components/layout/ AppShell, Sidebar, TopBar (search box), Notifications (bell, list, pop-ups)
+  components/layout/ AppShell, Sidebar, TopBar (search box), Notifications (bell, list, pop-ups),
+                     TimerPill (the running timer / break in the top bar)
   components/tasks/  TasksView (page logic), ListView, BoardView, TaskDialog, TaskMenu, badges,
                      task-actions (types), feedback (ErrorToast, LoadError, LoadingSkeleton;
                      shared with the calendar)
   components/calendar/ CalendarView: month grid, task bars from start day to due day, drag to move
   components/goals/  GoalsView (one card per goal: progress, target date, its tasks), GoalDialog
+  components/time/   TimeView (now card, tracked-time chart, time per task, entry log), EntryDialog
+  components/charts/ PeriodChart + usePeriodParam: the column chart with the Day/Week/Month switch
+                     (Dashboard "Completed" and Time "Tracked time")
   components/dashboard/ DashboardView: summary cards, needs attention, completed-per-day chart,
                      open tasks by priority / tag
-  hooks/use-tasks.ts loads tasks AND goals; create/update/delete for both (optimistic for tasks)
+  hooks/use-tasks.ts loads tasks, goals AND time entries; create/update/delete for all of them
+                     (optimistic for tasks); start/stop timer
+  hooks/use-timer.ts the running timer + the focus/break cycle (in TasksProvider: `useTaskList().timer`)
+  hooks/use-ticker.ts the time, ticking every second while a timer runs
   hooks/tasks-context.tsx  TasksProvider (in AppShell) shares useTasks() + a clock app-wide;
                      components read it with useTaskList()
   hooks/use-clock.ts wakes up exactly when the next start/reminder/due moment arrives
@@ -108,6 +118,8 @@ frontend/src/
   lib/notifications.ts works out notifications from the tasks (see below)
   lib/calendar.ts    local-day helpers: monthWeeks, taskDays, weekBars (bar rows), shiftTimestamp
   lib/dashboard.ts   the Dashboard's numbers: summarize, needsAttention, completedPer, openBy*
+  lib/periods.ts     Period (day/week/month), PERIODS, periodStart, sumPer (for both charts)
+  lib/time.ts        durations, formatDuration / formatClock, trackedByTask, trackedPer, FOCUS_MINUTES
   lib/goals.ts       goal colors (GOAL_COLOR_CLASSES), goalProgress, targetStatus, sortGoals
 ```
 
@@ -132,10 +144,17 @@ Base URL `/api` (locally also `http://localhost:4000/api`). JSON in and out. Err
 | POST   | `/goals`                             | `title` (required), `description`, `color`, `targetDate` | `Goal` (201) |
 | PATCH  | `/goals/:id`                         | any goal field                                    | `Goal`           |
 | DELETE | `/goals/:id`                         | (its tasks are kept, with `goalId` set to null)   | 204              |
+| GET    | `/time-entries`                      |                                                   | `TimeEntry[]` (newest first) |
+| POST   | `/time-entries/start`                | `taskId`, `kind` (`"timer"` / `"focus"`)          | `TimeEntry` (201); stops a running one first |
+| POST   | `/time-entries/stop`                 |                                                   | the stopped `TimeEntry`, or 404 if none runs |
+| POST   | `/time-entries`                      | `startedAt`, `endedAt` (required), `taskId`, `note` (added by hand) | `TimeEntry` (201) |
+| PATCH  | `/time-entries/:id`                  | `taskId`, `startedAt`, `endedAt`, `note`          | `TimeEntry`      |
+| DELETE | `/time-entries/:id`                  |                                                   | 204              |
 
 400 errors, besides invalid bodies: `dueAt` earlier than `startAt`, `status: "done"` while the
-task has unfinished subtasks (on POST: `status: "done"` together with `subtasks`), and a `goalId`
-that doesn't match a goal.
+task has unfinished subtasks (on POST: `status: "done"` together with `subtasks`), a `goalId`
+that doesn't match a goal, a time entry's `taskId` that doesn't match a task, and a time entry
+that ends before it starts.
 
 Data model:
 - `status`: `"todo" | "in_progress" | "done"`. `priority`: `"low" | "mid" | "high"`.
@@ -149,6 +168,10 @@ Data model:
 - `completedAt`: set by the server when a task moves to `done`, cleared when it leaves `done`.
 - `position`: order within a status column. Changing status without a position moves the task to the bottom.
 - `goalId`: the goal a task belongs to (one at most), or `null`.
+- `estimateMinutes`: how long a task should take (whole minutes, 1 to 60000), or `null`.
+- **Time entries** (`TimeEntry`): `taskId` (or `null`), `kind` (`timer` / `focus` / `manual`),
+  `startedAt`, `endedAt` (UTC timestamps; `endedAt` is `null` while the timer runs), `note`. At most
+  one entry runs at a time. Deleting a task deletes its time entries.
 - **Goals** (`Goal`): `title`, `description`, `color` (one of `GOAL_COLORS`), `targetDate` (a day,
   `"2026-12-31"`, no time; or `null`). A goal's progress is NOT stored: it's the share of its tasks
   that are done (`goalProgress` in `lib/goals.ts`). "Reached" = it has tasks and all are done;
@@ -222,6 +245,22 @@ Data model:
   (list rows and board cards).
 - Goal cards have `id="goal-<id>"`, so the Dashboard's Goals card links to `/goals#goal-3`.
 
+## Time
+
+- There's ONE running timer for everyone (no accounts), stored in the database. Starting one stops
+  any other (`TimeStore.start`, in one batch). After every start / stop the frontend re-fetches the
+  entries (`syncTimeEntries` in `use-tasks.ts`), because another browser may have changed the timer.
+- Focus (Pomodoro): `useTimer` ends a focus entry by itself after `FOCUS_MINUTES` (saved as exactly
+  25 minutes, even if the computer slept), then counts down a `BREAK_MINUTES` break. The break is
+  NOT saved; it's only kept in memory, so it disappears on reload. Both send a desktop
+  notification (`showDesktopMessage`) when those are turned on.
+- Live clocks use `useTicker(active)`, which ticks every second only while something runs.
+- Tracked time counts on the day an entry started (an entry across midnight isn't split).
+- Tasks show `TimeBadge` (tracked time, "/ estimate", red when over; a blinking dot while running) in
+  list rows and board cards; the ⋮ menu has Start / Stop timer; the task editor has an Estimate
+  field (hours + minutes) and shows "Tracked so far".
+- Manual entries (EntryDialog) start and end on the same day.
+
 ## Deployed on Vercel (read before changing the backend setup)
 
 - ONE Vercel project with Vercel Services ([vercel.json](vercel.json)): `/api/(.*)` goes to the
@@ -252,8 +291,8 @@ Data model:
   Never edit or reorder existing migrations, because people's databases have already run them.
   Statements are split on `;`, so don't put `;` inside text values. The version lives in the
   `schema_version` table (older local databases used `PRAGMA user_version`, which is read once).
-- Keep SQL in the stores (`TaskStore`, `GoalStore`). Keep route handlers thin. Validate every request
-  body with a JSON schema.
+- Keep SQL in the stores (`TaskStore`, `GoalStore`, `TimeStore`). Keep route handlers thin. Validate
+  every request body with a JSON schema.
 - Store methods are `async` (the database may be in the cloud), so `await` them.
   Writes that must happen together go in one `db.batch([...], "write")`, which is a transaction
   and only one trip to the database.
@@ -270,8 +309,8 @@ Data model:
 - UI must work from 375px phones to desktop with no sideways page scrolling. The sidebar becomes a drawer below `lg`.
 - Accessibility: real `<button>`s, `aria-label` on icon-only buttons, visible focus rings,
   and keyboard support (the board and the calendar support Space + arrow keys to move tasks).
-- Search (`?q=`), view (`?view=board`), the calendar month (`?month=`) and the dashboard chart
-  period (`?per=`) live in the URL.
+- Search (`?q=`), view (`?view=board`), the calendar month (`?month=`) and the chart period on the
+  Dashboard and Time pages (`?per=`) live in the URL.
   Update them with `window.history.replaceState`.
 - User-facing error messages should say what to do next (see the "Couldn't load your tasks" screen).
 - Don't commit `.env` files or `backend/data/` (the local SQLite database).
@@ -279,7 +318,9 @@ Data model:
 ## Not built yet (possible next steps)
 
 - User accounts and login (the sidebar "Log Out" is disabled, and the top bar shows "Guest").
-- Time and Settings pages (they currently show "Coming soon").
+- The Settings page (it currently shows "Coming soon"), e.g. to change the focus / break lengths.
+- Live updates between browsers: each page loads the data once (and the timer re-syncs on
+  start / stop), so changes made elsewhere show after a reload.
 - Reordering cards within a board column (drag & drop currently only changes the column).
 - Notifications while the browser is closed (web push).
 - File attachments (shown in the moodboard) and dark mode.

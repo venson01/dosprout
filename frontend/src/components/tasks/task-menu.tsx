@@ -2,6 +2,7 @@
 
 import { EllipsisVertical } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
+import { useTaskList } from "@/hooks/tasks-context";
 import { useDismiss } from "@/hooks/use-dismiss";
 import { hasUnfinishedSubtasks, STATUS_LABELS } from "@/lib/task-helpers";
 import { STATUSES, type Status, type Task } from "@/lib/types";
@@ -19,6 +20,8 @@ export function TaskMenu({ task, onEdit, onMove, onDelete }: TaskMenuProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   const close = useCallback(() => setOpen(false), []);
+  const { timer } = useTaskList();
+  const timerOnThisTask = timer.running?.taskId === task.id;
   useDismiss(containerRef, open, close);
 
   function choose(action: () => void) {
@@ -52,6 +55,16 @@ export function TaskMenu({ task, onEdit, onMove, onDelete }: TaskMenuProps) {
           className="absolute right-0 top-full z-30 mt-1 w-44 rounded-lg border border-line bg-white py-1 text-sm shadow-lg"
         >
           <MenuItem onClick={() => choose(onEdit)}>Edit</MenuItem>
+          <MenuItem
+            onClick={() =>
+              choose(() => {
+                // Errors (e.g. the server can't be reached) are rare here; the timer just won't change.
+                (timerOnThisTask ? timer.stop() : timer.start(task.id)).catch(() => {});
+              })
+            }
+          >
+            {timerOnThisTask ? "Stop timer" : "Start timer"}
+          </MenuItem>
           <p className="px-3 pb-1 pt-2 text-xs text-muted">Move to</p>
           {STATUSES.filter((status) => status !== task.status).map((status) =>
             status === "done" && hasUnfinishedSubtasks(task) ? (

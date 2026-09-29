@@ -24,6 +24,8 @@ const taskFields = {
   dueAt: { type: ["string", "null"], format: "date-time" },
   // The goal this task belongs to. null = no goal.
   goalId: { type: ["integer", "null"], minimum: 1 },
+  // How long the task should take, in minutes (up to 1,000 hours). null = no estimate.
+  estimateMinutes: { type: ["integer", "null"], minimum: 1, maximum: 60000 },
 } as const;
 
 const taskIdParams = {

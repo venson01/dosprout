@@ -8,6 +8,7 @@ import { STATUSES, type Status, type Task } from "@/lib/types";
 import { GoalBadge, OverdueBadge, PriorityBadge, TagBadge, TaskDate } from "./badges";
 import type { TaskActions, TaskGroups } from "./task-actions";
 import { TaskMenu } from "./task-menu";
+import { TimeBadge } from "./time-badge";
 
 // Column widths shared by the header row and every task row. The table layout
 // needs a wide screen (xl); on smaller screens the details go under the title.
@@ -140,16 +141,16 @@ function TaskRow({ task, actions }: { task: Task; actions: TaskActions }) {
             </button>
             {overdue && <OverdueBadge />}
           </div>
-          {(task.subtasks.length > 0 || goal) && (
-            <p className="flex flex-wrap items-center gap-x-3 text-xs text-muted">
-              {task.subtasks.length > 0 && (
-                <span>
-                  {finished}/{task.subtasks.length} subtasks
-                </span>
-              )}
-              {goal && <GoalBadge goal={goal} />}
-            </p>
-          )}
+          {/* "empty:hidden" hides the line when none of these has anything to show. */}
+          <p className="flex flex-wrap items-center gap-x-3 text-xs text-muted empty:hidden">
+            {task.subtasks.length > 0 && (
+              <span>
+                {finished}/{task.subtasks.length} subtasks
+              </span>
+            )}
+            {goal && <GoalBadge goal={goal} />}
+            <TimeBadge task={task} />
+          </p>
           {/* Below xl the extra columns are shown under the title instead. */}
           <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1.5 xl:hidden">
             {task.startAt && <TaskDate task={task} kind="start" showLabel />}

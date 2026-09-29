@@ -67,6 +67,22 @@ const MIGRATIONS: string[] = [
   );
   ALTER TABLE tasks ADD COLUMN goal_id INTEGER;
   `,
+
+  // Version 5: time tracking. Each row is a stretch of time spent (on a task or not);
+  // ended_at is empty while a timer runs. Tasks can have an estimate in minutes.
+  `
+  CREATE TABLE time_entries (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id    INTEGER,
+    kind       TEXT    NOT NULL DEFAULT 'timer',
+    started_at TEXT    NOT NULL,
+    ended_at   TEXT,
+    note       TEXT    NOT NULL DEFAULT '',
+    created_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+  );
+  CREATE INDEX time_entries_task_id ON time_entries(task_id);
+  ALTER TABLE tasks ADD COLUMN estimate_minutes INTEGER;
+  `,
 ];
 
 export interface OpenDatabaseOptions {
@@ -156,10 +172,10 @@ function splitStatements(sql: string): string[] {
 }
 
 /** A UTC timestamp for a local time a number of days from today, e.g. (2, 17) = 5 PM the day after tomorrow. */
-function daysFromToday(days: number, hour: number): string {
+function daysFromToday(days: number, hour: number, minute = 0): string {
   const date = new Date();
   date.setDate(date.getDate() + days);
-  date.setHours(hour, 0, 0, 0);
+  date.setHours(hour, minute, 0, 0);
   return date.toISOString();
 }
 
@@ -183,24 +199,35 @@ function exampleTaskStatements(): InStatement[] {
     ],
   };
   const examples = [
-    { title: "Website Development", status: "todo", priority: "high", tag: "Work", start: 1, due: 2, goal: 1,
+    { title: "Website Development", status: "todo", priority: "high", tag: "Work", start: 1, due: 2, goal: 1, estimate: 480,
       subtasks: [["Wireframes", 0], ["Build landing page", 0], ["Connect API", 0], ["Deploy", 0]] },
-    { title: "Update Contact Form", status: "todo", priority: "mid", tag: "Work", start: 2, due: 3, goal: 1,
+    { title: "Update Contact Form", status: "todo", priority: "mid", tag: "Work", start: 2, due: 3, goal: 1, estimate: 90,
       subtasks: [["Add phone field", 0], ["Validate email", 0]] },
-    { title: "Do back exercises", status: "in_progress", priority: "mid", tag: "Health", start: 0, due: 2, goal: null,
+    { title: "Do back exercises", status: "in_progress", priority: "mid", tag: "Health", start: 0, due: 2, goal: null, estimate: 30,
       subtasks: [["Stretch", 1], ["Plank", 1], ["Bridges", 0]] },
-    { title: "Integrate Payment Gateway", status: "in_progress", priority: "low", tag: "Work", start: -1, due: 2, goal: 1,
+    { title: "Integrate Payment Gateway", status: "in_progress", priority: "low", tag: "Work", start: -1, due: 2, goal: 1, estimate: 240,
       subtasks: [["Create sandbox account", 1], ["Checkout page", 1], ["Webhooks", 0]] },
-    { title: "Visit a dermatologist", status: "done", priority: "high", tag: "Health", start: -2, due: -1, goal: null,
+    { title: "Visit a dermatologist", status: "done", priority: "high", tag: "Health", start: -2, due: -1, goal: null, estimate: null,
       subtasks: [["Book appointment", 1]] },
   ] as const;
 
-  return [goal, ...examples.flatMap((example, index) => {
+  // A little tracked time, so the Time page has something to show: [task, days ago, start, end].
+  const time = [
+    [4, -1, [9, 0], [10, 30]],
+    [3, -1, [18, 0], [18, 25]],
+    [4, 0, [9, 15], [10, 0]],
+  ] as const;
+  const timeEntries: InStatement[] = time.map(([taskId, day, [h1, m1], [h2, m2]]) => ({
+    sql: "INSERT INTO time_entries (task_id, kind, started_at, ended_at) VALUES (?, 'timer', ?, ?)",
+    args: [taskId, daysFromToday(day, h1, m1), daysFromToday(day, h2, m2)],
+  }));
+
+  return [goal, ...timeEntries, ...examples.flatMap((example, index) => {
     const taskId = index + 1;
     return [
       {
-        sql: `INSERT INTO tasks (id, title, status, priority, tag, start_at, due_at, position, completed_at, goal_id)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        sql: `INSERT INTO tasks (id, title, status, priority, tag, start_at, due_at, position, completed_at, goal_id, estimate_minutes)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         args: [
           taskId,
           example.title,
@@ -213,6 +240,7 @@ function exampleTaskStatements(): InStatement[] {
           // Finished examples were "completed" at noon on their due day.
           example.status === "done" ? daysFromToday(example.due, 12) : null,
           example.goal,
+          example.estimate,
         ],
       },
       ...example.subtasks.map(([title, done], position) => ({

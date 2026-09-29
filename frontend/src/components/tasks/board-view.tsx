@@ -22,6 +22,7 @@ import { STATUSES, type Status, type Task } from "@/lib/types";
 import { GoalBadge, OverdueBadge, PriorityBadge, TagBadge, TaskDate } from "./badges";
 import type { TaskActions, TaskGroups } from "./task-actions";
 import { TaskMenu } from "./task-menu";
+import { TimeBadge } from "./time-badge";
 
 /** With the keyboard, Left/Right arrows jump a picked-up card straight to the next column. */
 const jumpBetweenColumns: KeyboardCoordinateGetter = (event, { context }) => {
@@ -234,11 +235,11 @@ function CardBody({
         </h3>
         {menu}
       </div>
-      {goal && (
-        <div className="mt-1">
-          <GoalBadge goal={goal} />
-        </div>
-      )}
+      {/* "empty:hidden" hides the line when there's no goal and no tracked time. */}
+      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 empty:hidden">
+        {goal && <GoalBadge goal={goal} />}
+        <TimeBadge task={task} />
+      </div>
 
       {total > 0 && (
         <div className="mt-2.5">

@@ -1,10 +1,14 @@
 import type {
   CreateGoalInput,
   CreateTaskInput,
+  CreateTimeEntryInput,
   Goal,
+  StartTimerInput,
   Task,
+  TimeEntry,
   UpdateGoalInput,
   UpdateTaskInput,
+  UpdateTimeEntryInput,
 } from "./types";
 
 // The API lives at /api on the same address as the website:
@@ -75,4 +79,14 @@ export const api = {
   updateGoal: (id: number, input: UpdateGoalInput) =>
     request<Goal>(`/goals/${id}`, { method: "PATCH", body: json(input) }),
   deleteGoal: (id: number) => request<void>(`/goals/${id}`, { method: "DELETE" }),
+
+  listTimeEntries: () => request<TimeEntry[]>("/time-entries"),
+  startTimer: (input: StartTimerInput) =>
+    request<TimeEntry>("/time-entries/start", { method: "POST", body: json(input) }),
+  stopTimer: () => request<TimeEntry>("/time-entries/stop", { method: "POST" }),
+  createTimeEntry: (input: CreateTimeEntryInput) =>
+    request<TimeEntry>("/time-entries", { method: "POST", body: json(input) }),
+  updateTimeEntry: (id: number, input: UpdateTimeEntryInput) =>
+    request<TimeEntry>(`/time-entries/${id}`, { method: "PATCH", body: json(input) }),
+  deleteTimeEntry: (id: number) => request<void>(`/time-entries/${id}`, { method: "DELETE" }),
 };

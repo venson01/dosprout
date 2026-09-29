@@ -15,9 +15,11 @@ const TASK_COLUMNS = [
   "updated_at",
   "completed_at",
   "goal_id",
+  "estimate_minutes",
 ];
 const SUBTASK_COLUMNS = ["id", "task_id", "title", "done", "position"];
 const GOAL_COLUMNS = ["id", "title", "description", "color", "target_date", "created_at", "updated_at"];
+const TIME_COLUMNS = ["id", "task_id", "kind", "started_at", "ended_at", "note", "created_at"];
 
 /** Thrown when the target already has tasks and `replace` wasn't asked for. */
 export class TargetNotEmptyError extends Error {
@@ -31,17 +33,18 @@ function insertSql(table: string, columns: string[]) {
 }
 
 /**
- * Copies every task, subtask and goal from one database to another, keeping their ids.
+ * Copies every task, subtask, goal and time entry from one database to another, keeping their ids.
  * Both must already be set up by openDatabase(), so they have the same tables.
  * The target must have no tasks, unless `replace` is true: then its tasks are deleted first.
  * It all happens in one transaction, so if anything fails, the target is left unchanged.
  */
 export async function copyTasks(from: Client, to: Client, { replace = false } = {}) {
-  const [tasks, subtasks, goals] = await from.batch(
+  const [tasks, subtasks, goals, time] = await from.batch(
     [
       "SELECT * FROM tasks ORDER BY id",
       "SELECT * FROM subtasks ORDER BY id",
       "SELECT * FROM goals ORDER BY id",
+      "SELECT * FROM time_entries ORDER BY id",
     ],
     "read",
   );
@@ -55,6 +58,7 @@ export async function copyTasks(from: Client, to: Client, { replace = false } = 
       "DELETE FROM subtasks",
       "DELETE FROM tasks",
       "DELETE FROM goals",
+      "DELETE FROM time_entries",
       ...goals.rows.map((row) => ({
         sql: insertSql("goals", GOAL_COLUMNS),
         args: GOAL_COLUMNS.map((column) => row[column]),
@@ -67,9 +71,18 @@ export async function copyTasks(from: Client, to: Client, { replace = false } = 
         sql: insertSql("subtasks", SUBTASK_COLUMNS),
         args: SUBTASK_COLUMNS.map((column) => row[column]),
       })),
+      ...time.rows.map((row) => ({
+        sql: insertSql("time_entries", TIME_COLUMNS),
+        args: TIME_COLUMNS.map((column) => row[column]),
+      })),
     ],
     "write",
   );
 
-  return { tasks: tasks.rows.length, subtasks: subtasks.rows.length, goals: goals.rows.length };
+  return {
+    tasks: tasks.rows.length,
+    subtasks: subtasks.rows.length,
+    goals: goals.rows.length,
+    timeEntries: time.rows.length,
+  };
 }

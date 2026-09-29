@@ -4,6 +4,7 @@ import { Menu, Search } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import { Notifications } from "./notifications";
+import { TimerPill } from "./timer-pill";
 
 export function TopBar({ onOpenMenu }: { onOpenMenu: () => void }) {
   const pathname = usePathname();
@@ -20,16 +21,19 @@ export function TopBar({ onOpenMenu }: { onOpenMenu: () => void }) {
       </button>
 
       {/* useSearchParams() must be inside <Suspense> (Next.js rule for static pages). */}
-      <Suspense fallback={<div className="w-full max-w-sm" />}>
+      <Suspense fallback={<div className="w-full min-w-0 max-w-sm" />}>
         {/* key: start fresh when you move to another page */}
         <SearchBox key={pathname} />
       </Suspense>
 
-      <div className="ml-auto flex items-center gap-3">
+      {/* shrink-0: on phones the search box gets narrower instead of squeezing these. */}
+      <div className="ml-auto flex shrink-0 items-center gap-2 sm:gap-3">
+        <TimerPill />
         <Notifications />
         <div
           aria-hidden
-          className="grid size-9 place-items-center rounded-full bg-brand-soft text-sm font-semibold text-brand"
+          // Hidden on phones to leave room for the timer (it's only a "Guest" placeholder).
+          className="hidden size-9 place-items-center rounded-full bg-brand-soft text-sm font-semibold text-brand sm:grid"
         >
           G
         </div>
@@ -79,7 +83,7 @@ function SearchBox() {
   }
 
   return (
-    <form role="search" onSubmit={handleSubmit} className="w-full max-w-sm">
+    <form role="search" onSubmit={handleSubmit} className="w-full min-w-0 max-w-sm">
       <SearchInput value={value} onChange={handleChange} />
     </form>
   );

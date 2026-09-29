@@ -10,7 +10,7 @@ import { copyTasks, TargetNotEmptyError } from "./copy-tasks.js";
 import { openDatabase } from "./db.js";
 import { TaskStore } from "./task-store.js";
 import { GoalStore } from "./goal-store.js";
-import type { Goal, Task } from "./types.js";
+import type { Goal, Task, TimeEntry } from "./types.js";
 
 // Every test gets a fresh, empty in-memory database.
 let app: FastifyInstance;
@@ -384,6 +384,97 @@ describe("goals API", () => {
   });
 });
 
+describe("time tracking API", () => {
+  const post = async (url: string, payload?: object) =>
+    app.inject({ method: "POST", url, ...(payload ? { payload } : {}) });
+
+  test("starts and stops a timer; starting another stops the first", async () => {
+    const task = await createTask({ title: "Write report" });
+
+    const first = await post("/api/time-entries/start", { taskId: task.id });
+    assert.equal(first.statusCode, 201);
+    const running = first.json() as TimeEntry;
+    assert.equal(running.taskId, task.id);
+    assert.equal(running.kind, "timer");
+    assert.equal(running.endedAt, null, "a running timer has no end yet");
+
+    // A focus session on no task: the first timer gets stopped.
+    const second = (await post("/api/time-entries/start", { kind: "focus" })).json() as TimeEntry;
+    assert.equal(second.kind, "focus");
+    const list = (await app.inject({ method: "GET", url: "/api/time-entries" })).json() as TimeEntry[];
+    assert.equal(list.filter((entry) => entry.endedAt === null).length, 1, "only one timer runs");
+    assert.ok(list.find((entry) => entry.id === running.id)?.endedAt);
+
+    const stopped = await post("/api/time-entries/stop");
+    assert.equal(stopped.statusCode, 200);
+    assert.equal((stopped.json() as TimeEntry).id, second.id);
+    assert.ok((stopped.json() as TimeEntry).endedAt);
+    assert.equal((await post("/api/time-entries/stop")).statusCode, 404, "nothing left to stop");
+  });
+
+  test("adds, edits and deletes time by hand, and checks the times", async () => {
+    const task = await createTask({ title: "Read book" });
+    const created = await post("/api/time-entries", {
+      taskId: task.id,
+      startedAt: "2026-09-01T10:00:00+01:00",
+      endedAt: "2026-09-01T10:45:00+01:00",
+      note: " Chapter 3 ",
+    });
+    assert.equal(created.statusCode, 201);
+    const entry = created.json() as TimeEntry;
+    assert.deepEqual(
+      [entry.kind, entry.startedAt, entry.endedAt, entry.note],
+      ["manual", "2026-09-01T09:00:00.000Z", "2026-09-01T09:45:00.000Z", "Chapter 3"],
+    );
+
+    // The end has to come after the start (also after an edit).
+    const backwards = await post("/api/time-entries", {
+      startedAt: "2026-09-01T11:00:00Z",
+      endedAt: "2026-09-01T10:00:00Z",
+    });
+    assert.equal(backwards.statusCode, 400);
+    const url = `/api/time-entries/${entry.id}`;
+    const badEdit = await app.inject({ method: "PATCH", url, payload: { endedAt: "2026-09-01T08:00:00Z" } });
+    assert.equal(badEdit.statusCode, 400);
+
+    const edited = await app.inject({ method: "PATCH", url, payload: { note: "Chapters 3-4", taskId: null } });
+    assert.deepEqual(
+      [(edited.json() as TimeEntry).note, (edited.json() as TimeEntry).taskId],
+      ["Chapters 3-4", null],
+    );
+
+    assert.equal((await app.inject({ method: "DELETE", url })).statusCode, 204);
+    assert.equal((await app.inject({ method: "DELETE", url })).statusCode, 404);
+  });
+
+  test("time can only be tracked on tasks that exist, and goes when its task is deleted", async () => {
+    assert.equal((await post("/api/time-entries/start", { taskId: 999 })).statusCode, 400);
+
+    const task = await createTask({ title: "Temp" });
+    await post("/api/time-entries/start", { taskId: task.id });
+    await app.inject({ method: "DELETE", url: `/api/tasks/${task.id}` });
+    const list = (await app.inject({ method: "GET", url: "/api/time-entries" })).json() as TimeEntry[];
+    assert.equal(list.length, 0);
+  });
+
+  test("tasks can have an estimate", async () => {
+    const task = await createTask({ title: "Paint fence", estimateMinutes: 90 });
+    assert.equal(task.estimateMinutes, 90);
+    const cleared = await app.inject({
+      method: "PATCH",
+      url: `/api/tasks/${task.id}`,
+      payload: { estimateMinutes: null },
+    });
+    assert.equal((cleared.json() as Task).estimateMinutes, null);
+    const invalid = await app.inject({
+      method: "PATCH",
+      url: `/api/tasks/${task.id}`,
+      payload: { estimateMinutes: 12.5 },
+    });
+    assert.equal(invalid.statusCode, 400);
+  });
+});
+
 describe("copying tasks to another database", () => {
   test("copies every task and subtask exactly, and refuses to overwrite unless asked", async () => {
     const from = await openDatabase({ url: ":memory:", seed: true });
@@ -400,6 +491,7 @@ describe("copying tasks to another database", () => {
     assert.deepEqual(await toStore.list(), await fromStore.list());
     // Goals come along too (the example data has one, linked to three tasks).
     assert.equal(result.goals, 1);
+    assert.equal(result.timeEntries, 3, "and the example tracked time");
     assert.deepEqual(await new GoalStore(to).list(), await new GoalStore(from).list());
 
     // New tasks in the target don't reuse the copied ids.

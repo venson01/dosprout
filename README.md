@@ -14,6 +14,10 @@ deployed on Vercel). The design is based on [moodboard/inspo.png](moodboard/insp
 - **Goals**: group tasks under a bigger aim ("Launch my website"). Each goal has a color, a
   description and an optional target date, and its progress fills up as you finish its tasks.
   Pick a task's goal in the task editor, or add tasks from the goal's card.
+- **Time**: start a timer on a task, or a 25-minute **focus session** (Pomodoro) that's followed
+  by a 5-minute break. Add or fix time by hand, see tracked time per day, week or month, and
+  compare each task's time with its **estimate**. While a timer runs, it shows in the top bar on
+  every page, and tasks show their tracked time.
 - Tasks grouped into **To Do / In Progress / Done**.
 - **List view** and **Board view**. On the board you can drag cards between columns
   (or use the keyboard: Space, arrow keys, Space).

@@ -32,8 +32,10 @@ const turso = await openDatabase({ url: tursoUrl, authToken: process.env.TURSO_A
 const where = tursoUrl.replace(/^[a-z]+:\/\//, "");
 
 try {
-  const { tasks, subtasks, goals } = await copyTasks(local, turso, { replace });
-  console.log(`Done! Copied ${tasks} tasks, ${subtasks} subtasks and ${goals} goals to ${where}.`);
+  const { tasks, subtasks, goals, timeEntries } = await copyTasks(local, turso, { replace });
+  console.log(
+    `Done! Copied ${tasks} tasks, ${subtasks} subtasks, ${goals} goals and ${timeEntries} time entries to ${where}.`,
+  );
 } catch (error) {
   if (!(error instanceof TargetNotEmptyError)) throw error;
   console.error(

@@ -81,18 +81,37 @@ export function useDesktopNotifications() {
  * not looking at DoSprout right now (then the in-app pop-up is enough).
  */
 export function showDesktopNotification(notification: AppNotification, onClick: () => void) {
+  showDesktopMessage({
+    title: TITLES[notification.kind],
+    body: notification.message,
+    tag: notification.id,
+    onClick,
+  });
+}
+
+/**
+ * Shows any message as a desktop notification (e.g. "Focus session done"), with the
+ * same rules: only if they're turned on and you're not looking at DoSprout right now.
+ */
+export function showDesktopMessage({
+  title,
+  body,
+  tag,
+  onClick,
+}: {
+  title: string;
+  body: string;
+  /** Same tag = the browser replaces instead of stacking a duplicate. */
+  tag: string;
+  onClick?: () => void;
+}) {
   if (getStatus() !== "on") return;
   if (document.visibilityState === "visible" && document.hasFocus()) return;
   try {
-    const desktop = new Notification(TITLES[notification.kind], {
-      body: notification.message,
-      // Same tag = the browser replaces instead of stacking a duplicate.
-      tag: notification.id,
-      icon: "/favicon.ico",
-    });
+    const desktop = new Notification(title, { body, tag, icon: "/favicon.ico" });
     desktop.onclick = () => {
       window.focus();
-      onClick();
+      onClick?.();
       desktop.close();
     };
   } catch {

@@ -3,7 +3,18 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { fromDateAndTime } from "@/lib/task-helpers";
-import type { CreateGoalInput, Goal, Priority, Status, Task, UpdateTaskInput } from "@/lib/types";
+import type {
+  CreateGoalInput,
+  CreateTimeEntryInput,
+  Goal,
+  Priority,
+  StartTimerInput,
+  Status,
+  Task,
+  TimeEntry,
+  UpdateTaskInput,
+  UpdateTimeEntryInput,
+} from "@/lib/types";
 
 /** What the task editor dialog works with before anything is saved. */
 export interface TaskDraft {
@@ -20,6 +31,8 @@ export interface TaskDraft {
   dueTime: string;
   /** The goal the task belongs to, or null. */
   goalId: number | null;
+  /** How long the task should take, in minutes, or null. */
+  estimateMinutes: number | null;
   subtasks: DraftSubtask[];
 }
 
@@ -34,27 +47,32 @@ export interface DraftSubtask {
 
 type LoadState = "loading" | "ready" | "error";
 
+/** Newest first, like the API sends them. */
+const newestFirst = (a: TimeEntry, b: TimeEntry) => b.startedAt.localeCompare(a.startedAt) || b.id - a.id;
+
 /**
- * Loads the task list (and the goals, which tasks belong to) from the API and
- * exposes functions to change them.
+ * Loads the task list, the goals (which tasks belong to) and the tracked time
+ * from the API, and exposes functions to change them.
  * Quick actions (moving, completing, deleting) update the screen immediately
  * and quietly re-sync with the server if the request fails.
  */
 export function useTasks() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
+  const [timeEntries, setTimeEntries] = useState<TimeEntry[]>([]);
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [loadError, setLoadError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
-    // Both at once: the pages need the goals to show which goal a task belongs to.
-    Promise.all([api.listTasks(), api.listGoals()]).then(
-      ([taskList, goalList]) => {
+    // All at once: pages show a task's goal and its tracked time next to it.
+    Promise.all([api.listTasks(), api.listGoals(), api.listTimeEntries()]).then(
+      ([taskList, goalList, entryList]) => {
         if (cancelled) return;
         setTasks(taskList);
         setGoals(goalList);
+        setTimeEntries(entryList);
         setLoadState("ready");
       },
       (error: Error) => {
@@ -105,6 +123,8 @@ export function useTasks() {
   const deleteTask = useCallback(
     async (id: number) => {
       setTasks((list) => list.filter((t) => t.id !== id));
+      // The server deletes the task's tracked time too.
+      setTimeEntries((list) => list.filter((e) => e.taskId !== id));
       try {
         await api.deleteTask(id);
       } catch (error) {
@@ -127,6 +147,7 @@ export function useTasks() {
         startAt: fromDateAndTime(draft.startDate, draft.startTime),
         dueAt: fromDateAndTime(draft.dueDate, draft.dueTime),
         goalId: draft.goalId,
+        estimateMinutes: draft.estimateMinutes,
       };
 
       if (!original) {
@@ -180,9 +201,62 @@ export function useTasks() {
     setTasks((list) => list.map((t) => (t.goalId === id ? { ...t, goalId: null } : t)));
   }, []);
 
+  // There's one timer for everyone (no accounts yet), so another browser may have started
+  // or stopped it. After each start / stop, fetch the real list so this page shows what's
+  // actually running.
+  const syncTimeEntries = useCallback(() => {
+    api.listTimeEntries().then(setTimeEntries, () => {});
+  }, []);
+
+  /** Starts a timer (or a focus session). The server stops a running one first. */
+  const startTimer = useCallback(
+    async (input: StartTimerInput) => {
+      const entry = await api.startTimer(input);
+      // Show it right away, then check with the server.
+      setTimeEntries((list) => [
+        entry,
+        ...list.map((e) => (e.endedAt === null ? { ...e, endedAt: entry.startedAt } : e)),
+      ]);
+      syncTimeEntries();
+      return entry;
+    },
+    [syncTimeEntries],
+  );
+
+  /** Stops the running timer. */
+  const stopTimer = useCallback(async () => {
+    try {
+      const entry = await api.stopTimer();
+      setTimeEntries((list) => list.map((e) => (e.id === entry.id ? entry : e)));
+    } finally {
+      // Also when it failed (e.g. it was already stopped in another browser).
+      syncTimeEntries();
+    }
+  }, [syncTimeEntries]);
+
+  /** Adds time by hand (original = null) or saves changes to an existing entry. */
+  const saveTimeEntry = useCallback(
+    async (original: TimeEntry | null, input: UpdateTimeEntryInput) => {
+      const entry = original
+        ? await api.updateTimeEntry(original.id, input)
+        : await api.createTimeEntry(input as CreateTimeEntryInput);
+      setTimeEntries((list) =>
+        (original ? list.map((e) => (e.id === entry.id ? entry : e)) : [...list, entry]).sort(newestFirst),
+      );
+      return entry;
+    },
+    [],
+  );
+
+  const deleteTimeEntry = useCallback(async (id: number) => {
+    await api.deleteTimeEntry(id);
+    setTimeEntries((list) => list.filter((e) => e.id !== id));
+  }, []);
+
   return {
     tasks,
     goals,
+    timeEntries,
     loadState,
     loadError,
     reload,
@@ -191,6 +265,10 @@ export function useTasks() {
     saveTask,
     saveGoal,
     deleteGoal,
+    startTimer,
+    stopTimer,
+    saveTimeEntry,
+    deleteTimeEntry,
   };
 }
 

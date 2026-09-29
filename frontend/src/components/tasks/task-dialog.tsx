@@ -3,6 +3,7 @@
 import { Check, Flag, Plus, Trash, X } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { useTaskList } from "@/hooks/tasks-context";
+import { formatDuration, trackedByTask } from "@/lib/time";
 import type { DraftSubtask, TaskDraft } from "@/hooks/use-tasks";
 import {
   fromDateAndTime,
@@ -69,6 +70,7 @@ function draftFromTask(
     dueDate: due.date,
     dueTime: due.time,
     goalId: task ? task.goalId : (defaultGoalId ?? null),
+    estimateMinutes: task?.estimateMinutes ?? null,
     subtasks: (task?.subtasks ?? []).map((s) => ({
       key: `id-${s.id}`,
       id: s.id,
@@ -96,7 +98,9 @@ export function TaskDialog({
   const [draft, setDraft] = useState(() =>
     draftFromTask(task, defaultStatus, defaultDueDate, defaultGoalId),
   );
-  const { goals } = useTaskList();
+  const { goals, timeEntries, now } = useTaskList();
+  // Time already tracked on this task (shown next to the estimate).
+  const tracked = task ? (trackedByTask(timeEntries, now).get(task.id) ?? 0) : 0;
   const [newSubtask, setNewSubtask] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -335,6 +339,11 @@ export function TaskDialog({
             defaultTime={DEFAULT_DUE_TIME}
             onChange={(date, time) => setDraft((d) => ({ ...d, dueDate: date, dueTime: time }))}
           />
+          <EstimateField
+            minutes={draft.estimateMinutes}
+            tracked={tracked}
+            onChange={(minutes) => update("estimateMinutes", minutes)}
+          />
 
           <fieldset>
             <legend className="mb-2 text-sm font-medium">
@@ -491,5 +500,63 @@ function DateTimeField({ label, date, time, defaultTime, onChange }: DateTimeFie
         </div>
       </div>
     </fieldset>
+  );
+}
+
+/**
+ * How long the task should take, as hours + minutes (saved as minutes; empty = no
+ * estimate). Also shows the time already tracked, so you can compare.
+ */
+function EstimateField({
+  minutes,
+  tracked,
+  onChange,
+}: {
+  minutes: number | null;
+  /** Time tracked so far, in milliseconds. */
+  tracked: number;
+  onChange: (minutes: number | null) => void;
+}) {
+  const ids = useId();
+  const hoursValue = minutes === null ? "" : String(Math.floor(minutes / 60));
+  const minutesValue = minutes === null ? "" : String(minutes % 60);
+
+  function change(hours: string, mins: string) {
+    const total = (Number(hours) || 0) * 60 + (Number(mins) || 0);
+    onChange(total > 0 ? Math.min(Math.round(total), 60000) : null);
+  }
+
+  return (
+    <div role="group" aria-labelledby={`${ids}-label`}>
+      <p id={`${ids}-label`} className="mb-1 text-sm font-medium">
+        Estimate <span className="font-normal text-muted">(optional)</span>
+      </p>
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        <input
+          type="number"
+          min={0}
+          max={999}
+          inputMode="numeric"
+          aria-label="Estimate, hours"
+          value={hoursValue}
+          onChange={(e) => change(e.target.value, minutesValue)}
+          className={`${inputBase} w-20`}
+        />
+        <span className="text-muted">h</span>
+        <input
+          type="number"
+          min={0}
+          max={59}
+          step={5}
+          inputMode="numeric"
+          aria-label="Estimate, minutes"
+          value={minutesValue}
+          onChange={(e) => change(hoursValue, e.target.value)}
+          className={`${inputBase} w-20`}
+        />
+        <span className="text-muted">m</span>
+        {tracked > 0 && <span className="ml-auto text-muted">Tracked so far: {formatDuration(tracked)}</span>}
+      </div>
+    </div>
   );
 }
