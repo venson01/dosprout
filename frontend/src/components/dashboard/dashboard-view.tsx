@@ -1,12 +1,13 @@
 "use client";
 
-import { AlarmClock, CircleCheck, CircleDashed, Clock } from "lucide-react";
+import { AlarmClock, CircleCheck, CircleDashed, Clock, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useState } from "react";
 import { ErrorToast, LoadError, LoadingSkeleton } from "@/components/tasks/feedback";
 import { TaskDialog } from "@/components/tasks/task-dialog";
 import { useTaskList } from "@/hooks/tasks-context";
+import { useCountUp } from "@/hooks/use-count-up";
 import {
   completedPer,
   needsAttention,
@@ -75,6 +76,7 @@ export function DashboardView() {
           <div className="grid gap-5 md:grid-cols-2">
             <Breakdown
               title="Open tasks by priority"
+              delay={5 * STAGGER_MS}
               rows={openByPriority(tasks).map(({ priority, count }) => ({
                 label: PRIORITY_LABELS[priority],
                 count,
@@ -83,6 +85,7 @@ export function DashboardView() {
             />
             <Breakdown
               title="Open tasks by tag"
+              delay={6 * STAGGER_MS}
               rows={openByTag(tasks).map(({ tag, count }) => ({ label: tag, count, fill: "bg-tag" }))}
             />
           </div>
@@ -106,20 +109,48 @@ export function DashboardView() {
   );
 }
 
+// Card effects (the 5 top cards and the two "Open tasks by ..." cards): "animate-card-in"
+// fades a card in (see globals.css); on hover it lifts a little and gets a shadow and a
+// blue border. "motion-reduce:" turns the movement off for people who asked their
+// device for less motion.
+const CARD_MOTION =
+  "animate-card-in transition duration-200 " +
+  "hover:-translate-y-1 hover:border-brand hover:shadow-lg hover:shadow-brand/10 " +
+  "motion-reduce:animate-none motion-reduce:transition-none motion-reduce:hover:translate-y-0";
+
+/** The top cards are links, so they also need a focus ring. */
+const CARD_EFFECTS =
+  "group block rounded-xl border border-line bg-white outline-none " +
+  "focus-visible:ring-2 focus-visible:ring-brand " +
+  CARD_MOTION;
+
+/** Cards come in one after another, this far apart. */
+const STAGGER_MS = 80;
+
 /** A white box with a heading, used by every part of the dashboard. */
 function Card({
   title,
   aside,
   id,
+  className = "",
+  delay,
   children,
 }: {
   title: string;
   aside?: React.ReactNode;
   id?: string;
+  /** Extra classes, e.g. CARD_MOTION. */
+  className?: string;
+  /** How long to wait before the fade-in animation starts, in milliseconds. */
+  delay?: number;
   children: React.ReactNode;
 }) {
   return (
-    <section id={id} className="h-full scroll-mt-20 rounded-xl border border-line bg-white p-4 sm:p-5">
+    <section
+      id={id}
+      className={`h-full scroll-mt-20 rounded-xl border border-line bg-white p-4 sm:p-5 ${className}`}
+      style={delay === undefined ? undefined : { animationDelay: `${delay}ms` }}
+    >
       <div className="mb-4 flex items-baseline justify-between gap-3">
         <h2 className="font-semibold">{title}</h2>
         {aside && <p className="text-sm text-muted">{aside}</p>}
@@ -132,6 +163,7 @@ function Card({
 /** The big "% done" number plus one small card per status. Each card links to its tasks. */
 function SummaryCards({ tasks, now }: { tasks: Task[]; now: number }) {
   const summary = summarize(tasks, now);
+  const percent = useCountUp(summary.percentDone);
   const tiles = [
     { label: "To do", value: summary.todo, href: "/tasks#status-todo", icon: CircleDashed },
     { label: "In progress", value: summary.inProgress, href: "/tasks#status-in_progress", icon: Clock },
@@ -142,9 +174,14 @@ function SummaryCards({ tasks, now }: { tasks: Task[]; now: number }) {
 
   return (
     <div className="grid grid-cols-2 gap-4 lg:grid-cols-6">
-      <div className="col-span-2 rounded-xl border border-line bg-white p-5">
+      <Link
+        href="/tasks"
+        // Screen readers get the final numbers, not the counting ones.
+        aria-label={`Tasks done: ${summary.percentDone}%, ${summary.done} of ${summary.total}. Show all tasks`}
+        className={`${CARD_EFFECTS} col-span-2 p-5`}
+      >
         <p className="text-sm text-muted">Tasks done</p>
-        <p className="mt-1 text-5xl font-semibold">{summary.percentDone}%</p>
+        <p className="mt-1 text-5xl font-semibold tabular-nums">{percent}%</p>
         <div
           role="progressbar"
           aria-label="Tasks done"
@@ -153,29 +190,59 @@ function SummaryCards({ tasks, now }: { tasks: Task[]; now: number }) {
           aria-valuemax={100}
           className="mt-4 h-2 overflow-hidden rounded-full bg-page"
         >
-          <div className="h-full rounded-full bg-brand" style={{ width: `${summary.percentDone}%` }} />
+          {/* Grows in from the left, then slides smoothly when the number changes. */}
+          <div
+            className="h-full origin-left animate-bar-grow rounded-full bg-brand transition-[width] duration-700 motion-reduce:animate-none motion-reduce:transition-none"
+            style={{ width: `${summary.percentDone}%`, animationDelay: "150ms" }}
+          />
         </div>
         <p className="mt-2 text-sm text-muted">
           {summary.done} of {summary.total} {summary.total === 1 ? "task" : "tasks"}
         </p>
-      </div>
-      {tiles.map(({ label, value, href, icon: Icon }) => (
-        <Link
-          key={label}
-          href={href}
-          className="rounded-xl border border-line bg-white p-4 outline-none hover:border-brand focus-visible:ring-2 focus-visible:ring-brand"
-        >
-          <p className="flex items-center gap-1.5 text-sm text-muted">
-            <Icon
-              aria-hidden
-              className={`size-4 ${label === "Overdue" && value > 0 ? "text-high" : "text-brand"}`}
-            />
-            {label}
-          </p>
-          <p className="mt-2 text-3xl font-semibold">{value}</p>
-        </Link>
+      </Link>
+      {tiles.map((tile, index) => (
+        <StatTile key={tile.label} {...tile} delay={(index + 1) * STAGGER_MS} />
       ))}
     </div>
+  );
+}
+
+function StatTile({
+  label,
+  value,
+  href,
+  icon: Icon,
+  delay,
+}: {
+  label: string;
+  value: number;
+  href: string;
+  icon: LucideIcon;
+  /** How long to wait before fading in, in milliseconds. */
+  delay: number;
+}) {
+  const shown = useCountUp(value);
+  const alert = label === "Overdue" && value > 0;
+
+  return (
+    <Link
+      href={href}
+      aria-label={`${label}: ${value}`}
+      className={`${CARD_EFFECTS} p-4`}
+      style={{ animationDelay: `${delay}ms` }}
+    >
+      <p className="flex items-center gap-1.5 text-sm text-muted">
+        {/* The icon grows a little when the card is hovered. */}
+        <Icon
+          aria-hidden
+          className={`size-4 transition-transform duration-200 group-hover:scale-125 motion-reduce:transition-none ${
+            alert ? "text-high" : "text-brand"
+          }`}
+        />
+        {label}
+      </p>
+      <p className="mt-2 text-3xl font-semibold tabular-nums">{shown}</p>
+    </Link>
   );
 }
 
@@ -386,40 +453,88 @@ function CompletedChart({ tasks, now }: { tasks: Task[]; now: number }) {
   );
 }
 
-/** Horizontal bars: one row per group with its label and count. */
+/**
+ * Horizontal bars: one row per group with its label and count. Same effects as the
+ * top cards: it fades in, the numbers count up and the bars grow in one after another.
+ */
 function Breakdown({
   title,
   rows,
+  delay,
 }: {
   title: string;
   rows: { label: string; count: number; fill: string }[];
+  /** How long to wait before the card fades in, in milliseconds. */
+  delay: number;
 }) {
   const max = Math.max(1, ...rows.map((row) => row.count));
   const total = rows.reduce((sum, row) => sum + row.count, 0);
+  const shownTotal = useCountUp(total);
 
   return (
-    <Card title={title} aside={`${total} open`}>
+    <Card
+      title={title}
+      aside={
+        <>
+          {/* Screen readers get the final number, not the counting one. */}
+          <span aria-hidden className="tabular-nums">{shownTotal}</span>
+          <span className="sr-only">{total}</span> open
+        </>
+      }
+      className={CARD_MOTION}
+      delay={delay}
+    >
       {total === 0 ? (
         <p className="py-6 text-center text-sm text-muted">No open tasks. Everything is done!</p>
       ) : (
         <ul className="space-y-3">
-          {rows.map((row) => (
-            <li key={row.label} className="grid grid-cols-[6rem_1fr_2rem] items-center gap-3 text-sm">
-              <span className="truncate text-ink" title={row.label}>
-                {row.label}
-              </span>
-              {/* The bar grows from the left and is rounded only at its end. */}
-              <span aria-hidden className="h-2.5 rounded-r bg-page">
-                <span
-                  className={`block h-full rounded-r ${row.fill}`}
-                  style={{ width: `${(row.count / max) * 100}%` }}
-                />
-              </span>
-              <span className="text-right font-medium text-ink">{row.count}</span>
-            </li>
+          {rows.map((row, index) => (
+            <BreakdownRow
+              key={row.label}
+              {...row}
+              max={max}
+              // Each bar starts growing a little after the card appears, one row after another.
+              delay={delay + 150 + index * 60}
+            />
           ))}
         </ul>
       )}
     </Card>
+  );
+}
+
+function BreakdownRow({
+  label,
+  count,
+  fill,
+  max,
+  delay,
+}: {
+  label: string;
+  count: number;
+  fill: string;
+  max: number;
+  delay: number;
+}) {
+  const shown = useCountUp(count);
+
+  return (
+    <li className="grid grid-cols-[6rem_1fr_2rem] items-center gap-3 text-sm">
+      <span className="truncate text-ink" title={label}>
+        {label}
+      </span>
+      {/* The bar grows in from the left (then slides when the number changes) and is
+          rounded only at its end. */}
+      <span aria-hidden className="h-2.5 rounded-r bg-page">
+        <span
+          className={`block h-full origin-left animate-bar-grow rounded-r transition-[width] duration-700 motion-reduce:animate-none motion-reduce:transition-none ${fill}`}
+          style={{ width: `${(count / max) * 100}%`, animationDelay: `${delay}ms` }}
+        />
+      </span>
+      <span className="text-right font-medium tabular-nums text-ink">
+        <span aria-hidden>{shown}</span>
+        <span className="sr-only">{count}</span>
+      </span>
+    </li>
   );
 }

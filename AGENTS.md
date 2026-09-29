@@ -97,6 +97,7 @@ frontend/src/
   hooks/use-notifications-read-at.ts  which notifications are read (localStorage)
   hooks/use-desktop-notifications.ts  desktop (system) notifications: on/off + sending
   hooks/use-dismiss.ts closes pop-up menus on outside click / Escape
+  hooks/use-count-up.ts numbers that count up to their value (Dashboard cards)
   lib/api.ts         fetch wrapper for the backend
   lib/types.ts       copy of backend/src/types.ts
   lib/task-helpers.ts labels, sorting, search, date formatting, statusFromSubtasks,
@@ -182,7 +183,17 @@ Data model:
   so the page is wrapped in `<Suspense>`. Chart rules followed here: one series so no legend,
   columns at most 24px wide and rounded only at the top, a number only on the busiest column
   (hover shows the rest), text in text colors (never the bar color), and a screen-reader table.
-- Status cards link to the Tasks list sections (`/tasks#status-todo`, `#status-in_progress`,
+- The 5 top cards and the two "Open tasks by ..." cards have effects (`CARD_MOTION` in
+  `dashboard-view.tsx`; the top cards use `CARD_EFFECTS`, which adds link styles). They fade and
+  slide in one after another (`animate-card-in`,
+  defined with its keyframes in `globals.css`), their numbers count up (`useCountUp`), the progress
+  bar and the breakdown bars grow in (`animate-bar-grow`, row after row), and on hover they lift
+  with a shadow and a blue border.
+  Every effect is switched off by the system's "reduce motion" setting (`motion-reduce:` classes,
+  and `useCountUp` checks it too). The cards' `aria-label`s hold the final numbers for screen readers.
+  `card-in` uses `backwards` fill mode on purpose: `both` would keep holding `transform` after the
+  animation and block the hover lift.
+- The "Tasks done" card links to `/tasks`. Status cards link to the Tasks list sections (`/tasks#status-todo`, `#status-in_progress`,
   `#status-done`; the ids are on the sections in `list-view.tsx`). The Overdue card jumps to the
   "Needs attention" card on the same page.
 

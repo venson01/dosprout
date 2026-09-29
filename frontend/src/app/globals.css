@@ -28,6 +28,33 @@
   --color-mid-bg: #fdf6e4;
   --color-low: #2a9d62;
   --color-low-bg: #e8f7ef;
+
+  /* Animations used by the Dashboard's top cards: "animate-card-in" and "animate-bar-grow". */
+  /* "backwards" (not "both"): once finished, the animation lets go of the card, so its hover lift still works. */
+  --animate-card-in: card-in 450ms ease-out backwards;
+  --animate-bar-grow: bar-grow 900ms ease-out both;
+
+  /* Fade in while sliding up a little. */
+  @keyframes card-in {
+    from {
+      opacity: 0;
+      transform: translateY(12px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  /* Grow from the left edge to full width. */
+  @keyframes bar-grow {
+    from {
+      transform: scaleX(0);
+    }
+    to {
+      transform: scaleX(1);
+    }
+  }
 }
 
 body {
