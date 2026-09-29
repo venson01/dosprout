@@ -33,7 +33,9 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     const body = await response.json().catch(() => null);
     // Our API always answers errors with JSON. A server error without it means the
     // request never reached the API (e.g. the local /api forwarding found no backend).
-    if (!body && response.status >= 500) throw new ApiError(UNREACHABLE, response.status);
+    if (!body && response.status >= 500) {
+      throw new ApiError(`The API isn't responding (error ${response.status}).`, response.status);
+    }
     throw new ApiError(body?.message ?? `Request failed (${response.status})`, response.status);
   }
   return response.status === 204 ? (undefined as T) : response.json();

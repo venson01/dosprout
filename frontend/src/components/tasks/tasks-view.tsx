@@ -244,9 +244,10 @@ function LoadError({ message, onRetry }: { message: string | null; onRetry: () =
       <h2 className="mt-3 text-lg font-semibold">Couldn&apos;t load your tasks</h2>
       <p className="mt-1 text-sm text-muted">{message}</p>
       <p className="mt-4 text-sm text-muted">
-        Make sure the backend is running. On your computer, run{" "}
+        On your computer: run{" "}
         <code className="rounded bg-page px-1.5 py-0.5 text-ink">npm run dev</code> in the project
-        folder (it starts the backend at http://localhost:4000).
+        folder (it starts the backend at http://localhost:4000). On Vercel: open the project&apos;s{" "}
+        <strong className="font-medium text-ink">Logs</strong> tab to see why the backend failed.
       </p>
       <button
         type="button"

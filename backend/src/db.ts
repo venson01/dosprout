@@ -1,6 +1,6 @@
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import { createClient, type Client, type InStatement } from "@libsql/client";
+import type { Client, InStatement } from "@libsql/client";
 
 // Each entry upgrades the database by one version. The database remembers its
 // current version in the schema_version table, so every migration runs only once.
@@ -69,11 +69,7 @@ export interface OpenDatabaseOptions {
 }
 
 export async function openDatabase({ url, authToken, seed = false }: OpenDatabaseOptions) {
-  // A local database file can only be created if its folder exists.
-  if (url.startsWith("file:")) {
-    mkdirSync(dirname(url.slice("file:".length)), { recursive: true });
-  }
-  const db = createClient({ url, authToken });
+  const db = await connect(url, authToken);
 
   const startVersion = await schemaVersion(db);
   const statements: InStatement[] = [];
@@ -95,6 +91,28 @@ export async function openDatabase({ url, authToken, seed = false }: OpenDatabas
   }
 
   return db;
+}
+
+/**
+ * Connects to the database, loading only the code that kind of database needs:
+ * - A cloud database (Turso, "libsql://...") is reached over HTTPS by the
+ *   pure-JavaScript "web" client.
+ * - A local file or ":memory:" needs the native SQLite library.
+ * This matters on Vercel: its bundler can't include the native library (the
+ * library picks its file by name only at runtime), so loading it there would
+ * crash the backend on every request.
+ */
+async function connect(url: string, authToken?: string): Promise<Client> {
+  if (/^(libsql|https?|wss?):/.test(url)) {
+    const { createClient } = await import("@libsql/client/web");
+    return createClient({ url, authToken });
+  }
+  // A local database file can only be created if its folder exists.
+  if (url.startsWith("file:")) {
+    mkdirSync(dirname(url.slice("file:".length)), { recursive: true });
+  }
+  const { createClient } = await import("@libsql/client");
+  return createClient({ url, authToken });
 }
 
 /**
