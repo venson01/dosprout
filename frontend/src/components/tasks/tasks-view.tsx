@@ -1,14 +1,15 @@
 "use client";
 
-import { ArrowUpDown, Check, CircleAlert, Plus, X } from "lucide-react";
+import { ArrowUpDown, Check, Plus, X } from "lucide-react";
 import { useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useDismiss } from "@/hooks/use-dismiss";
 import { useTaskList } from "@/hooks/tasks-context";
 import { matchesSearch, SORT_LABELS, sortTasks, type SortMode } from "@/lib/task-helpers";
 import { STATUSES, type Status, type Task } from "@/lib/types";
 import { BoardView } from "./board-view";
 import { ListView } from "./list-view";
+import { ErrorToast, LoadError, LoadingSkeleton } from "./feedback";
 import type { TaskActions, TaskGroups } from "./task-actions";
 import { TaskDialog } from "./task-dialog";
 
@@ -27,12 +28,7 @@ export function TasksView() {
   const [editor, setEditor] = useState<EditorState>(null);
   const [toast, setToast] = useState<string | null>(null);
 
-  // Hide the error message after a few seconds.
-  useEffect(() => {
-    if (!toast) return;
-    const timer = setTimeout(() => setToast(null), 5000);
-    return () => clearTimeout(timer);
-  }, [toast]);
+  const dismissToast = useCallback(() => setToast(null), []);
 
   const groups = useMemo(() => {
     const visible = sortTasks(
@@ -157,18 +153,7 @@ export function TasksView() {
         />
       )}
 
-      {toast && (
-        <div
-          role="alert"
-          className="fixed inset-x-4 bottom-4 z-50 mx-auto flex max-w-md items-start gap-3 rounded-xl bg-ink px-4 py-3 text-sm text-white shadow-xl"
-        >
-          <CircleAlert className="mt-0.5 size-4 shrink-0 text-high" />
-          <p className="flex-1">{toast}</p>
-          <button type="button" onClick={() => setToast(null)} aria-label="Dismiss">
-            <X className="size-4 text-white/70 hover:text-white" />
-          </button>
-        </div>
-      )}
+      {toast && <ErrorToast message={toast} onDismiss={dismissToast} />}
     </div>
   );
 }
@@ -217,45 +202,6 @@ function SortMenu({ value, onChange }: { value: SortMode; onChange: (mode: SortM
           ))}
         </div>
       )}
-    </div>
-  );
-}
-
-function LoadingSkeleton() {
-  return (
-    <div className="space-y-5" aria-busy="true" aria-label="Loading tasks">
-      {[0, 1, 2].map((i) => (
-        <div key={i} className="animate-pulse rounded-xl border border-line bg-white p-5">
-          <div className="h-4 w-28 rounded bg-line" />
-          <div className="mt-5 space-y-3">
-            <div className="h-3 w-3/4 rounded bg-page" />
-            <div className="h-3 w-1/2 rounded bg-page" />
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function LoadError({ message, onRetry }: { message: string | null; onRetry: () => void }) {
-  return (
-    <div className="rounded-xl border border-line bg-white p-6 text-center sm:p-10">
-      <CircleAlert className="mx-auto size-10 text-high" />
-      <h2 className="mt-3 text-lg font-semibold">Couldn&apos;t load your tasks</h2>
-      <p className="mt-1 text-sm text-muted">{message}</p>
-      <p className="mt-4 text-sm text-muted">
-        On your computer: run{" "}
-        <code className="rounded bg-page px-1.5 py-0.5 text-ink">npm run dev</code> in the project
-        folder (it starts the backend at http://localhost:4000). On Vercel: open the project&apos;s{" "}
-        <strong className="font-medium text-ink">Logs</strong> tab to see why the backend failed.
-      </p>
-      <button
-        type="button"
-        onClick={onRetry}
-        className="mt-5 rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-hover"
-      >
-        Try again
-      </button>
     </div>
   );
 }

@@ -9,7 +9,6 @@ const SECTIONS: Record<string, string> = {
   dashboard: "Dashboard",
   goals: "Goals",
   time: "Time",
-  calendar: "Calendar",
   settings: "Settings",
 };
 

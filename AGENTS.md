@@ -75,9 +75,12 @@ backend/src/
   scripts/copy-to-turso.ts  `npm run copy-to-turso`: local file -> Turso database in backend/.env
   app.test.ts        API tests using an in-memory database
 frontend/src/
-  app/               pages: /tasks (main), /[section] (coming-soon pages), layout.tsx
+  app/               pages: /tasks (main), /calendar, /[section] (coming-soon pages), layout.tsx
   components/layout/ AppShell, Sidebar, TopBar (search box), Notifications (bell + pop-ups)
-  components/tasks/  TasksView (page logic), ListView, BoardView, TaskDialog, TaskMenu, badges
+  components/tasks/  TasksView (page logic), ListView, BoardView, TaskDialog, TaskMenu, badges,
+                     feedback (ErrorToast, LoadError, LoadingSkeleton; shared with the calendar)
+  components/calendar/ CalendarView: month grid, task bars from start day to due day, drag to move
+  lib/calendar.ts    local-day helpers: monthWeeks, taskDays, weekBars (bar rows), shiftTimestamp
   hooks/use-tasks.ts loads tasks + create/update/delete, with optimistic updates
   hooks/tasks-context.tsx  TasksProvider (in AppShell) shares useTasks() + a clock app-wide;
                      components read it with useTaskList()
@@ -151,7 +154,10 @@ Data model:
   The font is Poppins.
 - UI must work from 375px phones to desktop with no sideways page scrolling. The sidebar becomes a drawer below `lg`.
 - Accessibility: real `<button>`s, `aria-label` on icon-only buttons, visible focus rings,
-  and keyboard support (the board supports Space + arrow keys to move cards).
+  and keyboard support (the board and the calendar support Space + arrow keys to move tasks).
+- Calendar: a task covers every day from its start day to its due day (only one date = that day).
+  Dragging a bar shifts start and due by the same number of days (keeping times). The month
+  shown lives in the URL (`?month=2026-09`). Below `md` it shows a small month with dots instead.
 - Search (`?q=`) and view (`?view=board`) live in the URL. Update them with `window.history.replaceState`.
 - User-facing error messages should say what to do next (see the "Couldn't load your tasks" screen).
 - Don't commit `.env` files or `backend/data/` (the local SQLite database).
@@ -159,7 +165,7 @@ Data model:
 ## Not built yet (possible next steps)
 
 - User accounts and login (the sidebar "Log Out" is disabled, and the top bar shows "Guest").
-- Dashboard, Goals, Time, Calendar and Settings pages (they currently show "Coming soon").
+- Dashboard, Goals, Time and Settings pages (they currently show "Coming soon").
 - Reordering cards within a board column (drag & drop currently only changes the column).
 - File attachments (shown in the moodboard) and dark mode.
 - Frontend tests (e.g. Vitest + Testing Library, or Playwright).

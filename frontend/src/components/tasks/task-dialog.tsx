@@ -18,6 +18,8 @@ interface TaskDialogProps {
   task: Task | null;
   /** Column a new task starts in. */
   defaultStatus: Status;
+  /** Due day for a new task, as "2026-11-17" (e.g. the day clicked in the calendar). */
+  defaultDueDate?: string;
   onSave: (draft: TaskDraft) => Promise<void>;
   onDelete?: () => void;
   onClose: () => void;
@@ -41,9 +43,12 @@ const DEFAULT_DUE_TIME = "17:00";
 let nextKey = 0;
 const newKey = () => `new-${nextKey++}`;
 
-function draftFromTask(task: Task | null, defaultStatus: Status): TaskDraft {
+function draftFromTask(task: Task | null, defaultStatus: Status, defaultDueDate?: string): TaskDraft {
   const start = toDateAndTime(task?.startAt ?? null);
-  const due = toDateAndTime(task?.dueAt ?? null);
+  const due =
+    !task && defaultDueDate
+      ? { date: defaultDueDate, time: DEFAULT_DUE_TIME }
+      : toDateAndTime(task?.dueAt ?? null);
   return {
     title: task?.title ?? "",
     description: task?.description ?? "",
@@ -67,10 +72,17 @@ function draftFromTask(task: Task | null, defaultStatus: Status): TaskDraft {
  * Pop-up form for creating or editing a task. Nothing is saved until you press
  * the Save button, so Cancel really throws away every change.
  */
-export function TaskDialog({ task, defaultStatus, onSave, onDelete, onClose }: TaskDialogProps) {
+export function TaskDialog({
+  task,
+  defaultStatus,
+  defaultDueDate,
+  onSave,
+  onDelete,
+  onClose,
+}: TaskDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const titleRef = useRef<HTMLInputElement>(null);
-  const [draft, setDraft] = useState(() => draftFromTask(task, defaultStatus));
+  const [draft, setDraft] = useState(() => draftFromTask(task, defaultStatus, defaultDueDate));
   const [newSubtask, setNewSubtask] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);

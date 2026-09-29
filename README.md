@@ -8,6 +8,8 @@ Features:
 
 - Tasks grouped into **To Do / In Progress / Done**
 - **List view** and **Board view**. On the board you can drag cards between columns.
+- **Calendar**: a month view where each task is a bar from its start day to its due day.
+  Click a day to add a task, click a bar to edit it, drag a bar to move it to other days.
 - Tags (Work, Health, ...) and priorities (High / Mid / Low)
 - Start and due dates, each with a time. Overdue tasks turn red.
 - **Subtasks** with a progress bar. Ticking them moves the task to In Progress / Done.
