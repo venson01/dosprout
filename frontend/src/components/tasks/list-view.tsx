@@ -36,7 +36,11 @@ function StatusSection({
   const label = STATUS_LABELS[status];
 
   return (
-    <section className="rounded-xl border border-line bg-white px-4 pb-2 pt-3 sm:px-5">
+    // The id lets other pages link here (e.g. the Dashboard's "In Progress" card -> /tasks#status-in_progress).
+    <section
+      id={`status-${status}`}
+      className="scroll-mt-20 rounded-xl border border-line bg-white px-4 pb-2 pt-3 sm:px-5"
+    >
       <div className="flex items-center justify-between border-b border-line pb-2">
         <button
           type="button"

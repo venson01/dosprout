@@ -8,6 +8,9 @@ deployed on Vercel). The design is based on [moodboard/inspo.png](moodboard/insp
 
 ## Features
 
+- **Dashboard**: how your tasks are going at a glance. The % done, counts per status, what's
+  overdue or due in the next 7 days, a chart of tasks completed per day, week or month, and open
+  tasks by priority and by tag.
 - Tasks grouped into **To Do / In Progress / Done**.
 - **List view** and **Board view**. On the board you can drag cards between columns
   (or use the keyboard: Space, arrow keys, Space).

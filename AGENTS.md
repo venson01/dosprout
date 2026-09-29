@@ -10,7 +10,8 @@ Humans should start with [README.md](README.md).
 - The owner is a **beginner**. Keep code simple and readable, prefer plain solutions over clever ones,
   add short comments that explain *why*, and explain your changes in plain language.
   Don't add new libraries unless they clearly pay for themselves, and say why when you do.
-- Pages: **Tasks** (list + board), **Calendar**, and "Coming soon" placeholders for the rest.
+- Pages: **Dashboard**, **Tasks** (list + board), **Calendar**, and "Coming soon" placeholders
+  for the rest (Goals, Time, Settings).
   There is no login: everyone using the same backend shares one task list.
 
 ## Stack
@@ -80,13 +81,15 @@ backend/src/
 frontend/
   next.config.ts     forwards /api to the backend while developing (not on Vercel)
 frontend/src/
-  app/               pages: / (redirects to /tasks), /tasks, /calendar,
+  app/               pages: / (redirects to /tasks), /dashboard, /tasks, /calendar,
                      /[section] (coming-soon pages), layout.tsx
   components/layout/ AppShell, Sidebar, TopBar (search box), Notifications (bell, list, pop-ups)
   components/tasks/  TasksView (page logic), ListView, BoardView, TaskDialog, TaskMenu, badges,
                      task-actions (types), feedback (ErrorToast, LoadError, LoadingSkeleton;
                      shared with the calendar)
   components/calendar/ CalendarView: month grid, task bars from start day to due day, drag to move
+  components/dashboard/ DashboardView: summary cards, needs attention, completed-per-day chart,
+                     open tasks by priority / tag
   hooks/use-tasks.ts loads tasks + create/update/delete, with optimistic updates
   hooks/tasks-context.tsx  TasksProvider (in AppShell) shares useTasks() + a clock app-wide;
                      components read it with useTaskList()
@@ -100,6 +103,7 @@ frontend/src/
                      hasUnfinishedSubtasks, isOverdue
   lib/notifications.ts works out notifications from the tasks (see below)
   lib/calendar.ts    local-day helpers: monthWeeks, taskDays, weekBars (bar rows), shiftTimestamp
+  lib/dashboard.ts   the Dashboard's numbers: summarize, needsAttention, completedPer, openBy*
 ```
 
 ## API
@@ -168,6 +172,20 @@ Data model:
 - The month shown lives in the URL (`?month=2026-09`). Below `md` it shows a small month with dots
   instead of bars, plus the selected day's task list.
 
+## Dashboard
+
+- Everything is computed in the browser from the loaded tasks (`lib/dashboard.ts`); the helpers take
+  `now` as an argument so the page stays pure. No chart library: the charts are plain HTML + Tailwind.
+- The "Completed" chart counts `completedAt` per local day (last 14 days), week (last 12, starting
+  on `WEEK_STARTS_ON`) or month (last 12), picked with the Day / Week / Month switch above it
+  (`PERIODS` and `completedPer` in `lib/dashboard.ts`). The choice lives in the URL (`?per=week`),
+  so the page is wrapped in `<Suspense>`. Chart rules followed here: one series so no legend,
+  columns at most 24px wide and rounded only at the top, a number only on the busiest column
+  (hover shows the rest), text in text colors (never the bar color), and a screen-reader table.
+- Status cards link to the Tasks list sections (`/tasks#status-todo`, `#status-in_progress`,
+  `#status-done`; the ids are on the sections in `list-view.tsx`). The Overdue card jumps to the
+  "Needs attention" card on the same page.
+
 ## Deployed on Vercel (read before changing the backend setup)
 
 - ONE Vercel project with Vercel Services ([vercel.json](vercel.json)): `/api/(.*)` goes to the
@@ -215,7 +233,8 @@ Data model:
 - UI must work from 375px phones to desktop with no sideways page scrolling. The sidebar becomes a drawer below `lg`.
 - Accessibility: real `<button>`s, `aria-label` on icon-only buttons, visible focus rings,
   and keyboard support (the board and the calendar support Space + arrow keys to move tasks).
-- Search (`?q=`), view (`?view=board`) and the calendar month (`?month=`) live in the URL.
+- Search (`?q=`), view (`?view=board`), the calendar month (`?month=`) and the dashboard chart
+  period (`?per=`) live in the URL.
   Update them with `window.history.replaceState`.
 - User-facing error messages should say what to do next (see the "Couldn't load your tasks" screen).
 - Don't commit `.env` files or `backend/data/` (the local SQLite database).
@@ -223,7 +242,7 @@ Data model:
 ## Not built yet (possible next steps)
 
 - User accounts and login (the sidebar "Log Out" is disabled, and the top bar shows "Guest").
-- Dashboard, Goals, Time and Settings pages (they currently show "Coming soon").
+- Goals, Time and Settings pages (they currently show "Coming soon").
 - Reordering cards within a board column (drag & drop currently only changes the column).
 - Notifications while the browser is closed (web push).
 - File attachments (shown in the moodboard) and dark mode.
