@@ -1,0 +1,165 @@
+import { mkdirSync } from "node:fs";
+import { dirname } from "node:path";
+import { createClient, type Client, type InStatement } from "@libsql/client";
+
+// Each entry upgrades the database by one version. The database remembers its
+// current version in the schema_version table, so every migration runs only once.
+// To change the schema later, ADD a new entry to the end — never edit old ones.
+// Separate statements with ";" (and don't use ";" inside text values).
+const MIGRATIONS: string[] = [
+  // Version 1: tasks and their subtasks.
+  `
+  CREATE TABLE tasks (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    title       TEXT    NOT NULL,
+    description TEXT    NOT NULL DEFAULT '',
+    status      TEXT    NOT NULL DEFAULT 'todo'
+                CHECK (status IN ('todo', 'in_progress', 'done')),
+    priority    TEXT    NOT NULL DEFAULT 'mid'
+                CHECK (priority IN ('low', 'mid', 'high')),
+    tag         TEXT    NOT NULL DEFAULT '',
+    due_date    TEXT,
+    position    REAL    NOT NULL DEFAULT 0,
+    created_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+  );
+
+  CREATE TABLE subtasks (
+    id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id  INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    title    TEXT    NOT NULL,
+    done     INTEGER NOT NULL DEFAULT 0,
+    position INTEGER NOT NULL DEFAULT 0
+  );
+
+  CREATE INDEX subtasks_task_id ON subtasks(task_id);
+  `,
+
+  // Version 2: dates get a time. due_date ("2026-11-17") becomes due_at, a UTC
+  // timestamp; old due dates are set to 5:00 PM in this computer's timezone.
+  `
+  ALTER TABLE tasks ADD COLUMN start_at TEXT;
+  ALTER TABLE tasks ADD COLUMN due_at TEXT;
+  UPDATE tasks
+    SET due_at = strftime('%Y-%m-%dT%H:%M:%fZ', due_date || ' 17:00', 'utc')
+    WHERE due_date IS NOT NULL;
+  ALTER TABLE tasks DROP COLUMN due_date;
+  `,
+];
+
+export interface OpenDatabaseOptions {
+  /**
+   * Where the database is:
+   * - "file:data/todos.db"   a file on this computer (the default for local development)
+   * - "libsql://....turso.io" a Turso database in the cloud (used on Vercel)
+   * - ":memory:"             a throwaway database (used by tests)
+   */
+  url: string;
+  /** Password-like token for a Turso cloud database. Not needed for files or ":memory:". */
+  authToken?: string;
+  /** Add a few example tasks when the database is brand new. */
+  seed?: boolean;
+}
+
+export async function openDatabase({ url, authToken, seed = false }: OpenDatabaseOptions) {
+  // A local database file can only be created if its folder exists.
+  if (url.startsWith("file:")) {
+    mkdirSync(dirname(url.slice("file:".length)), { recursive: true });
+  }
+  const db = createClient({ url, authToken });
+
+  const startVersion = await schemaVersion(db);
+  const statements: InStatement[] = [];
+  for (let version = startVersion; version < MIGRATIONS.length; version++) {
+    statements.push(...splitStatements(MIGRATIONS[version]));
+  }
+  if (statements.length > 0) {
+    statements.push({
+      sql: "UPDATE schema_version SET version = ?",
+      args: [MIGRATIONS.length],
+    });
+  }
+  if (startVersion === 0 && seed) {
+    statements.push(...exampleTaskStatements());
+  }
+  // batch() runs everything in one transaction: either it all works, or nothing changes.
+  if (statements.length > 0) {
+    await db.batch(statements, "write");
+  }
+
+  return db;
+}
+
+/**
+ * Returns how many MIGRATIONS this database has already run.
+ * It is stored in a one-row table called schema_version.
+ */
+async function schemaVersion(db: Client): Promise<number> {
+  await db.execute("CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)");
+  const { rows } = await db.execute("SELECT version FROM schema_version");
+  if (rows.length > 0) return Number(rows[0].version);
+
+  // Databases made by older versions of this app kept the number in
+  // PRAGMA user_version instead, so start from there.
+  const legacy = await db.execute("PRAGMA user_version").catch(() => undefined);
+  const version = Number(legacy?.rows[0]?.user_version ?? 0);
+  await db.execute({ sql: "INSERT INTO schema_version (version) VALUES (?)", args: [version] });
+  return version;
+}
+
+/** Turns one migration string into separate statements (they are split on ";"). */
+function splitStatements(sql: string): string[] {
+  return sql
+    .split(";")
+    .map((statement) => statement.trim())
+    .filter((statement) => statement.length > 0);
+}
+
+/** A UTC timestamp for a local time a number of days from today, e.g. (2, 17) = 5 PM the day after tomorrow. */
+function daysFromToday(days: number, hour: number): string {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  date.setHours(hour, 0, 0, 0);
+  return date.toISOString();
+}
+
+// Example data so the app doesn't look empty the first time you open it.
+// The database is brand new here, so we can choose the task ids ourselves.
+function exampleTaskStatements(): InStatement[] {
+  const examples = [
+    { title: "Website Development", status: "todo", priority: "high", tag: "Work", start: 1, due: 2,
+      subtasks: [["Wireframes", 0], ["Build landing page", 0], ["Connect API", 0], ["Deploy", 0]] },
+    { title: "Update Contact Form", status: "todo", priority: "mid", tag: "Work", start: 2, due: 3,
+      subtasks: [["Add phone field", 0], ["Validate email", 0]] },
+    { title: "Do back exercises", status: "in_progress", priority: "mid", tag: "Health", start: 0, due: 2,
+      subtasks: [["Stretch", 1], ["Plank", 1], ["Bridges", 0]] },
+    { title: "Integrate Payment Gateway", status: "in_progress", priority: "low", tag: "Work", start: -1, due: 2,
+      subtasks: [["Create sandbox account", 1], ["Checkout page", 1], ["Webhooks", 0]] },
+    { title: "Visit a dermatologist", status: "done", priority: "high", tag: "Health", start: -2, due: -1,
+      subtasks: [["Book appointment", 1]] },
+  ] as const;
+
+  return examples.flatMap((example, index) => {
+    const taskId = index + 1;
+    return [
+      {
+        sql: `INSERT INTO tasks (id, title, status, priority, tag, start_at, due_at, position)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        args: [
+          taskId,
+          example.title,
+          example.status,
+          example.priority,
+          example.tag,
+          daysFromToday(example.start, 9),
+          daysFromToday(example.due, 17),
+          index,
+        ],
+      },
+      ...example.subtasks.map(([title, done], position) => ({
+        sql: "INSERT INTO subtasks (task_id, title, done, position) VALUES (?, ?, ?, ?)",
+        args: [taskId, title, done, position],
+      })),
+    ];
+  });
+}

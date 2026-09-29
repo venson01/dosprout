@@ -1,0 +1,5 @@
+node_modules/
+dist/
+# The SQLite database with your todos (each developer has their own)
+data/
+.env

@@ -1,0 +1,19 @@
+{
+  "name": "dosprout",
+  "private": true,
+  "description": "Todo app: Next.js + Tailwind CSS frontend, Fastify + SQLite backend",
+  "scripts": {
+    "postinstall": "npm install --prefix backend && npm install --prefix frontend",
+    "dev": "concurrently --names api,web --prefix-colors blue,green \"npm run dev --prefix backend\" \"npm run dev --prefix frontend\"",
+    "build": "npm run build --prefix backend && npm run build --prefix frontend",
+    "test": "npm test --prefix backend",
+    "lint": "npm run lint --prefix frontend",
+    "typecheck": "npm run typecheck --prefix backend && npm run typecheck --prefix frontend"
+  },
+  "engines": {
+    "node": ">=22.13"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.5"
+  }
+}

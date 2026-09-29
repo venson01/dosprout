@@ -1,0 +1,41 @@
+@import "tailwindcss";
+
+/*
+  Design tokens taken from the moodboard (moodboard/inspo.png).
+  Each --color-* here becomes a Tailwind class, e.g. --color-brand -> bg-brand, text-brand.
+*/
+@theme {
+  --font-sans: var(--font-poppins), ui-sans-serif, system-ui, sans-serif;
+
+  --color-brand: #0b5cd5;
+  --color-brand-hover: #094cb0;
+  --color-brand-soft: #e8f0fd;
+
+  --color-sidebar: #1f2023;
+  --color-sidebar-active: #2e2f33;
+
+  --color-page: #f5f6f8;
+  --color-line: #e6e8ec;
+  --color-ink: #1c1d21;
+  --color-muted: #7c808a;
+
+  --color-tag: #3a6fbf;
+  --color-tag-bg: #e9f1fc;
+
+  --color-high: #e0524f;
+  --color-high-bg: #fdeeee;
+  --color-mid: #d19a1c;
+  --color-mid-bg: #fdf6e4;
+  --color-low: #2a9d62;
+  --color-low-bg: #e8f7ef;
+}
+
+body {
+  background: var(--color-page);
+  color: var(--color-ink);
+}
+
+/* Native <dialog> backdrop used by the task editor. */
+dialog::backdrop {
+  background: rgb(15 17 21 / 0.45);
+}
