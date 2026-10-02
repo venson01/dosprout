@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { playSound, unlockSound } from "@/lib/sounds";
 import { MINUTE_MS, runningEntry } from "@/lib/time";
 import type { Settings, StartTimerInput, TimeEntry, UpdateTimeEntryInput } from "@/lib/types";
 import { showDesktopMessage } from "./use-desktop-notifications";
@@ -17,6 +18,8 @@ interface TimerActions {
  * by itself after settings.focusMinutes and is saved, then a settings.breakMinutes
  * break counts down.
  * The break isn't saved; it's only a reminder.
+ * A chime plays when a focus session ends and a different one when the break ends
+ * (settings.timerSounds).
  */
 export function useTimer(
   entries: TimeEntry[],
@@ -25,6 +28,7 @@ export function useTimer(
 ) {
   const { focusMinutes, breakMinutes } = settings;
   const notify = settings.notifications.focus;
+  const sounds = settings.timerSounds;
   const running = runningEntry(entries);
   // When the current break ends (milliseconds), or null when there's no break.
   const [breakEndsAt, setBreakEndsAt] = useState<number | null>(null);
@@ -44,6 +48,8 @@ export function useTimer(
         const breakEnd = endsAt + breakMinutes * MINUTE_MS;
         if (Date.now() < breakEnd) {
           setBreakEndsAt(breakEnd);
+          // Unlike desktop notifications, sounds play even while you're looking at DoSprout.
+          if (sounds) playSound("focus-done");
           if (notify) {
             showDesktopMessage({
               title: "Focus session done",
@@ -58,7 +64,7 @@ export function useTimer(
     return () => clearTimeout(timer);
     // `entries` is only read when the timer fires, so changes to it shouldn't restart the timer.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focusId, focusStart, saveTimeEntry, focusMinutes, breakMinutes, notify]);
+  }, [focusId, focusStart, saveTimeEntry, focusMinutes, breakMinutes, notify, sounds]);
 
   // Tell you when the break is over.
   useEffect(() => {
@@ -66,6 +72,7 @@ export function useTimer(
     const timer = setTimeout(
       () => {
         setBreakEndsAt(null);
+        if (sounds) playSound("break-over");
         if (notify) {
           showDesktopMessage({
             title: "Break's over",
@@ -77,11 +84,13 @@ export function useTimer(
       Math.max(0, breakEndsAt - Date.now()),
     );
     return () => clearTimeout(timer);
-  }, [breakEndsAt, notify]);
+  }, [breakEndsAt, notify, sounds]);
 
   const start = useCallback(
     (taskId: number | null, kind: "timer" | "focus" = "timer") => {
       setBreakEndsAt(null);
+      // This runs from a click, so the browser lets us turn sound on for later.
+      if (kind === "focus") unlockSound();
       return startTimer({ taskId, kind });
     },
     [startTimer],

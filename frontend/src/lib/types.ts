@@ -124,6 +124,8 @@ export interface Settings {
   /** Length of a focus (Pomodoro) session and of the break after it, in minutes. */
   focusMinutes: number;
   breakMinutes: number;
+  /** Play a sound when a focus session ends and when the break after it ends. */
+  timerSounds: boolean;
   /** 0 = weeks start on Sunday, 1 = Monday (calendar and charts). */
   weekStartsOn: 0 | 1;
   /** Which kinds of notification to show (in the app and on the desktop). */
@@ -145,6 +147,7 @@ export const DEFAULT_SETTINGS: Settings = {
   theme: "system",
   focusMinutes: 25,
   breakMinutes: 5,
+  timerSounds: true,
   weekStartsOn: 1,
   notifications: { started: true, dueSoon: true, done: true, focus: true },
   defaultStartTime: "09:00",

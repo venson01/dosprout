@@ -127,6 +127,7 @@ frontend/src/
   lib/dashboard.ts   the Dashboard's numbers: summarize, needsAttention, completedPer, openBy*
   lib/periods.ts     Period (day/week/month), PERIODS, periodStart, sumPer (for both charts)
   lib/time.ts        durations, formatDuration / formatClock, trackedByTask, trackedPer
+  lib/sounds.ts      the timer chimes (Web Audio, no files): playSound("focus-done" / "break-over")
   lib/theme.ts       THEME_STORAGE_KEY + THEME_SCRIPT (shared by the server layout and ThemeSync)
   lib/goals.ts       goal colors (GOAL_COLOR_CLASSES), goalProgress, targetStatus, sortGoals
 ```
@@ -266,7 +267,10 @@ Data model:
 - Focus (Pomodoro): `useTimer` ends a focus entry by itself after `FOCUS_MINUTES` (saved as exactly
   25 minutes, even if the computer slept), then counts down a `BREAK_MINUTES` break. The break is
   NOT saved; it's only kept in memory, so it disappears on reload. Both send a desktop
-  notification (`showDesktopMessage`) when those are turned on.
+  notification (`showDesktopMessage`) when those are turned on, and play a chime (`lib/sounds.ts`:
+  falling notes when focus ends, rising notes when the break ends) when `settings.timerSounds` is on.
+  Browsers only allow sound after a click on the page, so starting a focus session calls
+  `unlockSound()`. The chimes play even while you're looking at DoSprout.
 - Live clocks use `useTicker(active)`, which ticks every second only while something runs.
 - Tracked time counts on the day an entry started (an entry across midnight isn't split).
 - Tasks show `TimeBadge` (tracked time, "/ estimate", red when over; a blinking dot while running) in
@@ -277,7 +281,7 @@ Data model:
 ## Settings and dark mode
 
 - `Settings` (see `types.ts`): `theme` (system / light / dark), `focusMinutes`, `breakMinutes`,
-  `weekStartsOn` (0 Sunday / 1 Monday), `notifications` (started / dueSoon / done / focus),
+  `timerSounds`, `weekStartsOn` (0 Sunday / 1 Monday), `notifications` (started / dueSoon / done / focus),
   `defaultStartTime`, `defaultDueTime`, `defaultPriority`, `tagSuggestions`. Saved on the server
   (shared by everyone, no accounts). `DEFAULT_SETTINGS` exists in both `types.ts` files, and
   `withDefaults` fills in settings added later, so adding a setting needs no migration.

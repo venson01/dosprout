@@ -1,12 +1,13 @@
 "use client";
 
-import { Check, Download, Monitor, Moon, Plus, Sun, Trash, Upload, X } from "lucide-react";
+import { Check, Download, Monitor, Moon, Plus, Sun, Trash, Upload, Volume2, X } from "lucide-react";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { DesktopNotificationsSetting } from "@/components/layout/notifications";
 import { ErrorToast, LoadError, LoadingSkeleton } from "@/components/tasks/feedback";
 import { useTaskList } from "@/hooks/tasks-context";
 import { api } from "@/lib/api";
 import { dayKey } from "@/lib/calendar";
+import { playSound } from "@/lib/sounds";
 import { PRIORITY_LABELS } from "@/lib/task-helpers";
 import { PRIORITIES, type Priority, type Settings, type Theme, type UpdateSettingsInput } from "@/lib/types";
 
@@ -31,6 +32,9 @@ const PRIORITY_ACTIVE: Record<Priority, string> = {
   mid: "border-mid bg-mid-bg text-mid",
   low: "border-low bg-low-bg text-low",
 };
+
+const previewButtonClass =
+  "inline-flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 text-xs font-medium text-ink outline-none hover:bg-page focus-visible:ring-2 focus-visible:ring-brand";
 
 const inputClass =
   "rounded-lg border border-line bg-surface px-3 py-2 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-brand/20";
@@ -138,7 +142,7 @@ function AppearanceSection({ settings, save }: SectionProps) {
   );
 }
 
-/** Focus / break lengths and the first day of the week. */
+/** Focus / break lengths, the timer sounds and the first day of the week. */
 function TimerSection({ settings, save }: SectionProps) {
   const ids = useId();
   return (
@@ -191,6 +195,30 @@ function TimerSection({ settings, save }: SectionProps) {
             <option value={1}>Monday</option>
             <option value={0}>Sunday</option>
           </select>
+        </div>
+      </div>
+      <div className="mt-4 border-t border-line pt-4">
+        <div className="flex items-center gap-3">
+          <div className="min-w-0 flex-1">
+            <p id={`${ids}-sounds`} className="text-sm font-medium">
+              Timer sounds
+            </p>
+            <p className="text-xs text-muted">A chime when a focus session ends, and a different one when the break ends.</p>
+          </div>
+          <Switch
+            checked={settings.timerSounds}
+            onChange={(on) => save({ timerSounds: on })}
+            labelledBy={`${ids}-sounds`}
+          />
+        </div>
+        {/* Clicking these also lets the browser play sound, so they double as a test. */}
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button type="button" onClick={() => playSound("focus-done")} className={previewButtonClass}>
+            <Volume2 aria-hidden className="size-4" /> Play &quot;Focus done&quot;
+          </button>
+          <button type="button" onClick={() => playSound("break-over")} className={previewButtonClass}>
+            <Volume2 aria-hidden className="size-4" /> Play &quot;Break over&quot;
+          </button>
         </div>
       </div>
     </Section>

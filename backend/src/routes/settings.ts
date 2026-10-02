@@ -20,6 +20,7 @@ const settingsFields = {
   theme: { type: "string", enum: THEMES },
   focusMinutes: { type: "integer", minimum: 5, maximum: 120 },
   breakMinutes: { type: "integer", minimum: 1, maximum: 60 },
+  timerSounds: { type: "boolean" },
   // 0 = Sunday, 1 = Monday
   weekStartsOn: { type: "integer", enum: [0, 1] },
   notifications: {

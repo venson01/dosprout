@@ -483,12 +483,13 @@ describe("settings and backups API", () => {
     const changed = await app.inject({
       method: "PATCH",
       url: "/api/settings",
-      payload: { theme: "dark", focusMinutes: 50, notifications: { dueSoon: false } },
+      payload: { theme: "dark", focusMinutes: 50, timerSounds: false, notifications: { dueSoon: false } },
     });
     assert.equal(changed.statusCode, 200);
     const settings = changed.json() as Settings;
     assert.equal(settings.theme, "dark");
     assert.equal(settings.focusMinutes, 50);
+    assert.equal(settings.timerSounds, false);
     // Only dueSoon changed; the other notification kinds stay on.
     assert.deepEqual(settings.notifications, { started: true, dueSoon: false, done: true, focus: true });
     assert.equal(settings.breakMinutes, 5);
@@ -503,6 +504,7 @@ describe("settings and backups API", () => {
       { theme: "blue" },
       { focusMinutes: 2 },
       { weekStartsOn: 3 },
+      { timerSounds: "loud" },
       { defaultDueTime: "5pm" },
       { tagSuggestions: ["Work", "Work"] },
     ]) {
