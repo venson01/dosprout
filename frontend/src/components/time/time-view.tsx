@@ -1,12 +1,13 @@
 "use client";
 
-import { Coffee, PencilLine, Play, Plus, Square, Timer } from "lucide-react";
+import { Coffee, PencilLine, PictureInPicture2, Play, Plus, Square, Timer } from "lucide-react";
 import { useCallback, useState } from "react";
 import { PeriodChart, usePeriodParam } from "@/components/charts/period-chart";
 import { ErrorToast, LoadError, LoadingSkeleton } from "@/components/tasks/feedback";
 import { TaskDialog } from "@/components/tasks/task-dialog";
 import { useTaskList } from "@/hooks/tasks-context";
 import { useTicker } from "@/hooks/use-ticker";
+import { closeTimerWindow, openTimerWindow, useTimerWindow } from "@/hooks/use-timer-window";
 import { addDays, dayKey, fromDayKey, startOfDay } from "@/lib/calendar";
 import { PERIODS, periodStart } from "@/lib/periods";
 import {
@@ -20,6 +21,7 @@ import {
   trackedPer,
 } from "@/lib/time";
 import type { Task, TimeEntry, TimeEntryKind } from "@/lib/types";
+import { BigClock } from "./big-clock";
 import { EntryDialog } from "./entry-dialog";
 
 /** "9:05 AM" */
@@ -124,16 +126,53 @@ export function TimeView() {
   );
 }
 
-/** A white box with a heading. */
+/**
+ * Opens the timer in a small window that stays on top, even when the browser is minimized.
+ * Only Chrome and Edge can do this; other browsers get a short note instead.
+ */
+function PopOutButton({ onError }: { onError: (message: string) => void }) {
+  const { popout, supported } = useTimerWindow();
+  if (!supported) {
+    return <p className="self-center text-xs text-muted">Pop-out timer: open DoSprout in Chrome or Edge.</p>;
+  }
+  return (
+    <button
+      type="button"
+      onClick={() =>
+        popout
+          ? closeTimerWindow()
+          : openTimerWindow().catch(() => onError("Couldn't open the pop-out timer. Try again, or open DoSprout in Chrome or Edge."))
+      }
+      className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-brand ring-1 ring-line hover:bg-page"
+    >
+      <PictureInPicture2 aria-hidden className="size-4" />
+      {popout ? "Close pop-out" : "Pop out"}
+    </button>
+  );
+}
+
+/** A white box with a heading. A column, so content with `flex-1` can fill the rest of it. */
 function Card({ title, aside, children }: { title: string; aside?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <section className="h-full rounded-xl border border-line bg-surface p-4 sm:p-5">
+    <section className="flex h-full flex-col rounded-xl border border-line bg-surface p-4 sm:p-5">
       <div className="mb-4 flex items-baseline justify-between gap-3">
         <h2 className="font-semibold">{title}</h2>
         {aside && <p className="text-sm text-muted">{aside}</p>}
       </div>
       {children}
     </section>
+  );
+}
+
+/**
+ * Fills the card's free space and centers the clock in it. `@container` lets the
+ * clock measure this area's width (see big-clock.tsx).
+ */
+function ClockArea({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="@container flex min-h-56 flex-1 flex-col items-center justify-center gap-3 py-4 text-center">
+      {children}
+    </div>
   );
 }
 
@@ -155,37 +194,40 @@ function NowCard({ tasks, now, onError }: { tasks: Task[]; now: number; onError:
     const focusDone = Math.min(100, Math.max(0, ((now - started) / (focusMinutes * MINUTE_MS)) * 100));
     return (
       <Card title={focus ? "Focus session" : "Timer running"}>
-        <p className="truncate text-sm text-muted">{task ? task.title : "No task"}</p>
-        <p className="my-2 text-5xl font-semibold tabular-nums" aria-live="off">
-          {focus ? formatClock(left) : formatClock(now - started)}
-        </p>
-        {focus ? (
-          <>
-            <div
-              role="progressbar"
-              aria-label="Focus session"
-              aria-valuenow={Math.round(focusDone)}
-              aria-valuemin={0}
-              aria-valuemax={100}
-              className="h-2 overflow-hidden rounded-full bg-page"
-            >
-              <div className="h-full rounded-full bg-brand" style={{ width: `${focusDone}%` }} />
-            </div>
-            <p className="mt-2 text-sm text-muted">
-              Left of {focusMinutes} minutes. Then a {breakMinutes}-minute break starts.
-            </p>
-          </>
-        ) : (
-          <p className="text-sm text-muted">Started at {clockTime(running.startedAt)}</p>
-        )}
-        <button
-          type="button"
-          onClick={() => report(timer.stop())}
-          className="mt-4 inline-flex items-center gap-2 rounded-lg bg-inverse px-4 py-2 text-sm font-medium text-white hover:bg-inverse/85"
-        >
-          <Square className="size-3.5 fill-current" />
-          Stop
-        </button>
+        <ClockArea>
+          <p className="max-w-full truncate text-sm text-muted">{task ? task.title : "No task"}</p>
+          <BigClock time={focus ? formatClock(left) : formatClock(now - started)} />
+          {focus ? (
+            <>
+              <div
+                role="progressbar"
+                aria-label="Focus session"
+                aria-valuenow={Math.round(focusDone)}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                className="h-2 w-full overflow-hidden rounded-full bg-page"
+              >
+                <div className="h-full rounded-full bg-brand" style={{ width: `${focusDone}%` }} />
+              </div>
+              <p className="text-sm text-muted">
+                Left of {focusMinutes} minutes. Then a {breakMinutes}-minute break starts.
+              </p>
+            </>
+          ) : (
+            <p className="text-sm text-muted">Started at {clockTime(running.startedAt)}</p>
+          )}
+        </ClockArea>
+        <div className="flex flex-wrap justify-center gap-2">
+          <button
+            type="button"
+            onClick={() => report(timer.stop())}
+            className="inline-flex items-center gap-2 rounded-lg bg-inverse px-4 py-2 text-sm font-medium text-white hover:bg-inverse/85"
+          >
+            <Square className="size-3.5 fill-current" />
+            Stop
+          </button>
+          <PopOutButton onError={onError} />
+        </div>
       </Card>
     );
   }
@@ -193,12 +235,14 @@ function NowCard({ tasks, now, onError }: { tasks: Task[]; now: number; onError:
   if (breakEndsAt !== null) {
     return (
       <Card title="Break">
-        <p className="flex items-center gap-2 text-sm text-muted">
-          <Coffee aria-hidden className="size-4 text-low" />
-          Stand up, stretch, drink some water.
-        </p>
-        <p className="my-2 text-5xl font-semibold tabular-nums">{formatClock(breakEndsAt - now)}</p>
-        <div className="mt-4 flex flex-wrap gap-2">
+        <ClockArea>
+          <p className="flex items-center gap-2 text-sm text-muted">
+            <Coffee aria-hidden className="size-4 shrink-0 text-low" />
+            Stand up, stretch, drink some water.
+          </p>
+          <BigClock time={formatClock(breakEndsAt - now)} />
+        </ClockArea>
+        <div className="flex flex-wrap justify-center gap-2">
           <button
             type="button"
             onClick={timer.skipBreak}
@@ -206,6 +250,7 @@ function NowCard({ tasks, now, onError }: { tasks: Task[]; now: number; onError:
           >
             Skip break
           </button>
+          <PopOutButton onError={onError} />
         </div>
       </Card>
     );

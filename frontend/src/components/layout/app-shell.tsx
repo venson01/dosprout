@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { TasksProvider } from "@/hooks/tasks-context";
 import { ThemeSync } from "./theme-sync";
+import { TimerPopout } from "./timer-popout";
 import { Sidebar } from "./sidebar";
 import { TopBar } from "./top-bar";
 
@@ -15,6 +16,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     // The tasks are loaded here, once, so every page and the notification bell share them.
     <TasksProvider>
       <ThemeSync />
+      <TimerPopout />
       <div className="min-h-dvh lg:flex">
         <Sidebar open={menuOpen} onClose={() => setMenuOpen(false)} />
         <div className="flex min-w-0 flex-1 flex-col">

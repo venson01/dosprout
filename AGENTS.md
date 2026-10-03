@@ -94,13 +94,15 @@ frontend/src/
                      icon.svg: the browser-tab icon (the sidebar's Sprout icon, lighter blue on
                      dark browsers); Next.js adds the <link rel="icon"> by itself
   components/layout/ AppShell, Sidebar, TopBar (search box), Notifications (bell, list, pop-ups),
-                     TimerPill (the running timer / break in the top bar), ThemeSync
+                     TimerPill (the running timer / break in the top bar), TimerPopout
+                     (the pop-out timer window's content), ThemeSync
   components/tasks/  TasksView (page logic), ListView, BoardView, TaskDialog, TaskMenu, badges,
                      task-actions (types), feedback (ErrorToast, LoadError, LoadingSkeleton;
                      shared with the calendar)
   components/calendar/ CalendarView: month grid, task bars from start day to due day, drag to move
   components/goals/  GoalsView (one card per goal: progress, target date, its tasks), GoalDialog
   components/time/   TimeView (now card, tracked-time chart, time per task, entry log), EntryDialog
+                     BigClock (the big centered clock, sized to fit; also used by the pop-out)
   components/settings/ SettingsView: appearance, timer & calendar, notifications, task defaults, data
   components/inline-script.tsx  a <script> that runs before the first paint (theme)
   components/charts/ PeriodChart + usePeriodParam: the column chart with the Day/Week/Month switch
@@ -111,6 +113,7 @@ frontend/src/
                      (optimistic for tasks); start/stop timer
   hooks/use-timer.ts the running timer + the focus/break cycle (in TasksProvider: `useTaskList().timer`)
   hooks/use-ticker.ts the time, ticking every second while a timer runs
+  hooks/use-timer-window.ts  the pop-out timer window (Document Picture-in-Picture): open / close
   hooks/tasks-context.tsx  TasksProvider (in AppShell) shares useTasks() + a clock app-wide;
                      components read it with useTaskList()
   hooks/use-clock.ts wakes up exactly when the next start/reminder/due moment arrives
@@ -272,6 +275,15 @@ Data model:
   Browsers only allow sound after a click on the page, so starting a focus session calls
   `unlockSound()`. The chimes play even while you're looking at DoSprout.
 - Live clocks use `useTicker(active)`, which ticks every second only while something runs.
+- **Pop-out timer:** the Time page's "Pop out" button (shown while a timer or break runs) opens a
+  small always-on-top window that stays visible when the browser is minimized. It uses the
+  Document Picture-in-Picture API (Chrome and Edge only; other browsers see a note instead), which
+  only opens after a click, so it can't open by itself on minimize. `use-timer-window.ts` opens it,
+  copies the page's stylesheets and `data-theme` into it, and keeps the window outside React so it
+  survives page changes. `TimerPopout` (in AppShell) draws into it with `createPortal`, so it reads
+  the same `useTaskList()` data. It ticks with the pop-out's own `setInterval`
+  (`useTicker(active, popout)`), because browsers slow a minimized tab's timers to about once a minute.
+  The built-in browser in the Claude desktop app can't open these windows ("no window"); test in Chrome.
 - Tracked time counts on the day an entry started (an entry across midnight isn't split).
 - Tasks show `TimeBadge` (tracked time, "/ estimate", red when over; a blinking dot while running) in
   list rows and board cards; the ⋮ menu has Start / Stop timer; the task editor has an Estimate
