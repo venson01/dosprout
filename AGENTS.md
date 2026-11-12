@@ -12,6 +12,13 @@ Humans should start with [README.md](README.md).
   Don't add new libraries unless they clearly pay for themselves, and say why when you do.
 - Pages: **Dashboard**, **Tasks** (list + board), **Goals**, **Time**, **Calendar**, **Settings**.
   (The "Coming soon" placeholder route `app/[section]` was removed once every page existed.)
+- `/` is a **landing page** (no sidebar), designed in Figma ("DoSprout Landing Page"); its buttons
+  open the app at `/tasks`. The app pages live in the `app/(app)` route group, whose layout adds
+  `AppShell` (sidebar + top bar). The brackets keep "(app)" out of the URLs.
+  Its playful effects are CSS only: `animate-float` / `animate-sway` / `animate-draw` and the
+  `reveal-on-scroll` utility (a scroll-driven animation) in `globals.css`. Feature cards are links,
+  so they lift on hover; step cards aren't, so they don't lift (same rule as the Dashboard).
+  Every moving part has a `motion-reduce:` class.
   There is no login: everyone using the same backend shares one task list.
 
 ## Stack
@@ -89,10 +96,13 @@ backend/src/
 frontend/
   next.config.ts     forwards /api to the backend while developing (not on Vercel)
 frontend/src/
-  app/               pages: / (redirects to /tasks), /dashboard, /tasks, /goals, /time, /calendar,
-                     /settings, layout.tsx (theme script in <head>)
+  app/               page.tsx: / (the landing page), layout.tsx (theme script in <head>, no AppShell)
+  app/(app)/         the app pages: /dashboard, /tasks, /goals, /time, /calendar, /settings;
+                     layout.tsx wraps them in AppShell
                      icon.svg: the browser-tab icon (the sidebar's Sprout icon, lighter blue on
                      dark browsers); Next.js adds the <link rel="icon"> by itself
+  components/landing/ LandingPage (all sections of /, server components, no state) and AppPreview
+                     (an HTML picture of the board, role="img")
   components/layout/ AppShell, Sidebar, TopBar (search box), Notifications (bell, list, pop-ups),
                      TimerPill (the running timer / break in the top bar), TimerPopout
                      (the pop-out timer window's content), ThemeSync
@@ -306,7 +316,8 @@ Data model:
   (the same values twice, keep them in sync). So: use `bg-surface` (not `bg-white`) for cards,
   dialogs and inputs, and `bg-inverse` (not `bg-ink`) for dark tooltips / toasts with white text.
   `text-white` is fine on colored fills (brand buttons, the always-dark sidebar). The dark goal
-  colors passed the dataviz validator on a dark surface.
+  colors passed the dataviz validator on a dark surface. `brand-solid` is the one token with no
+  dark value on purpose: the landing page's big blue band keeps white text readable in both themes.
 - No white flash: `THEME_SCRIPT` runs in `<head>` (via `InlineScript`, the pattern from the Next.js
   guide "Preventing flash before hydration") and applies the theme copy from localStorage;
   `<html suppressHydrationWarning>`. `ThemeSync` applies the server setting once loaded and

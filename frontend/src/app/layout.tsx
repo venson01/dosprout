@@ -1,15 +1,14 @@
 import type { Metadata } from "next";
 import { Poppins } from "next/font/google";
 import { InlineScript } from "@/components/inline-script";
-import { AppShell } from "@/components/layout/app-shell";
 import { THEME_SCRIPT } from "@/lib/theme";
 import "./globals.css";
 
-// Poppins is the font used in the moodboard.
+// Poppins is the font used in the moodboard. 700 (bold) is for the landing page's big headings.
 const poppins = Poppins({
   variable: "--font-poppins",
   subsets: ["latin"],
-  weight: ["400", "500", "600"],
+  weight: ["400", "500", "600", "700"],
 });
 
 export const metadata: Metadata = {
@@ -26,9 +25,8 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         {/* Applies a saved light / dark theme before the first paint (see lib/theme.ts). */}
         <InlineScript html={THEME_SCRIPT} />
       </head>
-      <body className="min-h-full font-sans">
-        <AppShell>{children}</AppShell>
-      </body>
+      {/* The sidebar and top bar are added by app/(app)/layout.tsx, not here, so the landing page doesn't get them. */}
+      <body className="min-h-full font-sans">{children}</body>
     </html>
   );
 }
