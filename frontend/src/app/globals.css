@@ -10,6 +10,12 @@
   --color-brand: #0b5cd5;
   --color-brand-hover: #094cb0;
   --color-brand-soft: #e8f0fd;
+  /*
+    The brand blue that does NOT get lighter in dark mode (so it isn't in the dark blocks below).
+    For big blue areas with white text on the landing page, and blue text on a white button:
+    white on #0b5cd5 stays readable in both themes, the lighter dark-mode brand blue wouldn't.
+  */
+  --color-brand-solid: #0b5cd5;
 
   --color-sidebar: #1f2023;
   --color-sidebar-active: #2e2f33;
@@ -74,6 +80,74 @@
     to {
       transform: scaleX(1);
     }
+  }
+
+  /*
+    Playful animations for the landing page: "animate-float", "animate-sway", "animate-draw".
+    They only use "transform" (or the stroke), so they combine with rotate-* and
+    hover:-translate-y-* classes, which use the separate "rotate" / "translate" properties.
+    Always pair them with motion-reduce:animate-none.
+  */
+  --animate-float: float 6s ease-in-out infinite;
+  --animate-sway: sway 2.4s ease-in-out infinite;
+  --animate-draw: draw 1s ease-out 600ms both;
+
+  /* Bob gently up and down, like a leaf in the air. */
+  @keyframes float {
+    0%,
+    100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-14px);
+    }
+  }
+
+  /* Rock left and right from the bottom (use with origin-bottom), like a sprout in the wind. */
+  @keyframes sway {
+    0%,
+    100% {
+      transform: rotate(-8deg);
+    }
+    50% {
+      transform: rotate(8deg);
+    }
+  }
+
+  /* Draw an SVG line from start to end. The <path> needs pathLength="1" and stroke-dasharray="1". */
+  @keyframes draw {
+    from {
+      stroke-dashoffset: 1;
+    }
+    to {
+      stroke-dashoffset: 0;
+    }
+  }
+}
+
+/*
+  "reveal-on-scroll": a card fades and slides up as it scrolls into view.
+  It's driven by the scroll position (CSS scroll-driven animations), so no JavaScript is needed.
+  Browsers without support (e.g. Firefox today) and "reduce motion" users just see the card.
+*/
+@utility reveal-on-scroll {
+  @media (prefers-reduced-motion: no-preference) {
+    @supports (animation-timeline: view()) {
+      animation: reveal linear both;
+      animation-timeline: view();
+      animation-range: entry 10% entry 70%;
+    }
+  }
+}
+
+@keyframes reveal {
+  from {
+    opacity: 0;
+    transform: translateY(32px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
   }
 }
 
