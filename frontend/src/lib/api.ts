@@ -22,6 +22,7 @@ import type {
   TeamSummary,
   TimeEntry,
   UpdateGoalInput,
+  User,
   UpdateSettingsInput,
   UpdateTaskInput,
   UpdateTimeEntryInput,
@@ -86,6 +87,14 @@ async function request<T>(path: string, init: RequestInit = {}, teamId = current
 
 const json = (body: unknown) => JSON.stringify(body);
 
+/**
+ * The address of someone's profile picture, for an <img>. `version` (their avatarUpdatedAt)
+ * changes with every new picture, so the browser can keep each one cached for good.
+ */
+export function avatarUrl(userId: number, version: string): string {
+  return `${API_URL}/api/users/${userId}/avatar?v=${encodeURIComponent(version)}`;
+}
+
 export const api = {
   // ---- Accounts ----
   /** Who is logged in (401 if nobody). */
@@ -93,6 +102,9 @@ export const api = {
   signUp: (input: SignupInput) => request<Me>("/auth/signup", { method: "POST", body: json(input) }),
   logIn: (input: LoginInput) => request<Me>("/auth/login", { method: "POST", body: json(input) }),
   logOut: () => request<void>("/auth/logout", { method: "POST" }),
+  /** image: a data URL ("data:image/jpeg;base64,..."), see lib/avatar-image.ts. */
+  setAvatar: (image: string) => request<User>("/me/avatar", { method: "PUT", body: json({ image }) }),
+  removeAvatar: () => request<User>("/me/avatar", { method: "DELETE" }),
 
   // ---- Teams ----
   /** organizationId: create it in one of your organizations (null / left out: on its own). */

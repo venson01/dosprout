@@ -23,6 +23,7 @@ interface MemberRow {
   email: string;
   role: TeamRole;
   joined_at: string;
+  avatar_updated_at: string | null;
 }
 
 interface InviteRow {
@@ -59,7 +60,14 @@ const TEAM_SELECT = `
    AND organization_members.user_id = team_members.user_id`;
 
 function toMember(row: MemberRow): Member {
-  return { id: row.id, name: row.name, email: row.email, role: row.role, joinedAt: row.joined_at };
+  return {
+    id: row.id,
+    name: row.name,
+    email: row.email,
+    role: row.role,
+    joinedAt: row.joined_at,
+    avatarUpdatedAt: row.avatar_updated_at,
+  };
 }
 
 function toInvite(row: InviteRow): Invite {
@@ -180,7 +188,7 @@ export class TeamStore {
   /** Everyone in the team: owners first, then by name. */
   async members(teamId: number): Promise<Member[]> {
     const { rows } = await this.db.execute({
-      sql: `SELECT users.id, users.name, users.email, team_members.role, team_members.joined_at
+      sql: `SELECT users.id, users.name, users.email, users.avatar_updated_at, team_members.role, team_members.joined_at
             FROM team_members JOIN users ON users.id = team_members.user_id
             WHERE team_members.team_id = ?
             ORDER BY team_members.role = 'owner' DESC, users.name COLLATE NOCASE, users.id`,

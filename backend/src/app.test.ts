@@ -1316,3 +1316,77 @@ describe("organizations", () => {
     assert.equal(me.teams.find((t) => t.id === team.id)?.organizationId, null);
   });
 });
+
+describe("profile pictures", () => {
+  // The smallest real PNG: one pixel.
+  const PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+  const PNG_URL = `data:image/png;base64,${PNG}`;
+
+  const upload = (image: string) => inject({ method: "PUT", url: "/api/me/avatar", payload: { image } });
+
+  test("upload, see it everywhere, remove it", async () => {
+    const adaId = ((await inject({ method: "GET", url: "/api/auth/me" })).json() as Me).user.id;
+    assert.equal(((await inject({ method: "GET", url: "/api/auth/me" })).json() as Me).user.avatarUpdatedAt, null);
+
+    const response = await upload(PNG_URL);
+    assert.equal(response.statusCode, 200, response.body);
+    const updatedAt = response.json().avatarUpdatedAt;
+    assert.ok(updatedAt);
+    assert.equal(((await inject({ method: "GET", url: "/api/auth/me" })).json() as Me).user.avatarUpdatedAt, updatedAt);
+
+    const picture = await inject({ method: "GET", url: `/api/users/${adaId}/avatar?v=${updatedAt}` });
+    assert.equal(picture.statusCode, 200);
+    assert.equal(picture.headers["content-type"], "image/png");
+    assert.equal(picture.headers["x-content-type-options"], "nosniff");
+    assert.deepEqual(picture.rawPayload, Buffer.from(PNG, "base64"));
+
+    // Team and organization member lists say who has a picture.
+    const team = (await inject({ method: "POST", url: "/api/teams", payload: { name: "Design" } })).json() as TeamSummary;
+    const members = (await inject({ method: "GET", url: `/api/teams/${team.id}/members` })).json() as Member[];
+    assert.equal(members[0].avatarUpdatedAt, updatedAt);
+    const org = (await inject({ method: "POST", url: "/api/organizations", payload: { name: "Acme" } })).json();
+    const details = (await inject({ method: "GET", url: `/api/organizations/${org.id}` })).json() as OrganizationDetails;
+    assert.equal(details.members[0].avatarUpdatedAt, updatedAt);
+
+    const removed = await inject({ method: "DELETE", url: "/api/me/avatar" });
+    assert.equal(removed.json().avatarUpdatedAt, null);
+    assert.equal((await inject({ method: "GET", url: `/api/users/${adaId}/avatar` })).statusCode, 404);
+  });
+
+  test("only people who share a team or organization see your picture", async () => {
+    const adaId = ((await inject({ method: "GET", url: "/api/auth/me" })).json() as Me).user.id;
+    await upload(PNG_URL);
+    const bob = await signUp("Bob", "bob@example.com");
+    const asBob = (options: InjectOptions) => app.inject({ ...options, headers: { cookie: bob.cookie } });
+    const url = `/api/users/${adaId}/avatar`;
+
+    // Strangers can't, and neither can someone who isn't logged in.
+    assert.equal((await asBob({ method: "GET", url })).statusCode, 404);
+    assert.equal((await app.inject({ method: "GET", url })).statusCode, 401);
+
+    // Once Bob is in Ada's team, he can.
+    const team = (await inject({ method: "POST", url: "/api/teams", payload: { name: "Design" } })).json() as TeamSummary;
+    const { token } = (
+      await inject({ method: "POST", url: `/api/teams/${team.id}/invites`, payload: { email: "bob@example.com" } })
+    ).json() as Invite;
+    assert.equal((await asBob({ method: "POST", url: `/api/invites/${token}/accept` })).statusCode, 200);
+    assert.equal((await asBob({ method: "GET", url })).statusCode, 200);
+  });
+
+  test("refuses things that aren't pictures, and pictures that are too big", async () => {
+    const cases = [
+      // An SVG can hold a script, so it's never accepted.
+      `data:image/svg+xml;base64,${Buffer.from("<svg onload='alert(1)'/>").toString("base64")}`,
+      // Labelled as a PNG, but it's really HTML.
+      `data:image/png;base64,${Buffer.from("<html><script>alert(1)</script></html>").toString("base64")}`,
+      "not a data url",
+      // A real PNG start, but over 200 KB.
+      `data:image/png;base64,${Buffer.concat([Buffer.from(PNG, "base64"), Buffer.alloc(210 * 1024)]).toString("base64")}`,
+    ];
+    for (const image of cases) {
+      assert.equal((await upload(image)).statusCode, 400, image.slice(0, 40));
+    }
+    const me = (await inject({ method: "GET", url: "/api/auth/me" })).json() as Me;
+    assert.equal(me.user.avatarUpdatedAt, null);
+  });
+});

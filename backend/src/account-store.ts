@@ -14,10 +14,23 @@ interface UserRow {
   name: string;
   password_hash: string;
   created_at: string;
+  avatar_updated_at: string | null;
 }
 
 function toUser(row: UserRow): User {
-  return { id: row.id, email: row.email, name: row.name, createdAt: row.created_at };
+  return {
+    id: row.id,
+    email: row.email,
+    name: row.name,
+    createdAt: row.created_at,
+    avatarUpdatedAt: row.avatar_updated_at,
+  };
+}
+
+/** A profile picture: its type ("image/jpeg"...) and the image bytes. */
+export interface Avatar {
+  contentType: string;
+  data: Buffer;
 }
 
 /**
@@ -145,5 +158,57 @@ export class AccountStore {
   /** Logs out: the token stops working. */
   async deleteSession(token: string): Promise<void> {
     await this.db.execute({ sql: "DELETE FROM sessions WHERE token_hash = ?", args: [hashToken(token)] });
+  }
+
+  /** Sets (or replaces) someone's profile picture. Returns the updated user. */
+  async setAvatar(userId: number, avatar: Avatar): Promise<User> {
+    // Stored as base64 text: it travels through every kind of database (and copy-tasks) unchanged.
+    await this.db.batch(
+      [
+        {
+          sql: `INSERT INTO avatars (user_id, content_type, data) VALUES (?, ?, ?)
+                ON CONFLICT (user_id) DO UPDATE SET content_type = excluded.content_type, data = excluded.data`,
+          args: [userId, avatar.contentType, avatar.data.toString("base64")],
+        },
+        // A new time = a new picture address (?v=...), so browsers don't show the old one.
+        { sql: `UPDATE users SET avatar_updated_at = ${NOW} WHERE id = ?`, args: [userId] },
+      ],
+      "write",
+    );
+    return (await this.getUser(userId))!;
+  }
+
+  /** Removes someone's profile picture (their initials show again). Returns the updated user. */
+  async removeAvatar(userId: number): Promise<User> {
+    await this.db.batch(
+      [
+        { sql: "DELETE FROM avatars WHERE user_id = ?", args: [userId] },
+        { sql: "UPDATE users SET avatar_updated_at = NULL WHERE id = ?", args: [userId] },
+      ],
+      "write",
+    );
+    return (await this.getUser(userId))!;
+  }
+
+  /**
+   * Someone's profile picture, if `viewerId` may see it: their own, or someone they share
+   * a team or an organization with. Otherwise (or when there's none) undefined.
+   */
+  async avatarFor(userId: number, viewerId: number): Promise<Avatar | undefined> {
+    const { rows } = await this.db.execute({
+      sql: `SELECT content_type, data FROM avatars
+            WHERE user_id = ?
+              AND (user_id = ?
+                OR EXISTS (SELECT 1 FROM team_members theirs
+                           JOIN team_members mine ON mine.team_id = theirs.team_id
+                           WHERE theirs.user_id = avatars.user_id AND mine.user_id = ?)
+                OR EXISTS (SELECT 1 FROM organization_members theirs
+                           JOIN organization_members mine ON mine.organization_id = theirs.organization_id
+                           WHERE theirs.user_id = avatars.user_id AND mine.user_id = ?))`,
+      args: [userId, viewerId, viewerId, viewerId],
+    });
+    const row = rows[0];
+    if (!row) return undefined;
+    return { contentType: String(row.content_type), data: Buffer.from(String(row.data), "base64") };
   }
 }

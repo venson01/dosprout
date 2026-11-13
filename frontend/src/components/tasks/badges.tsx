@@ -42,12 +42,12 @@ export function GoalBadge({ goal }: { goal: Goal }) {
   );
 }
 
-/** Who a task is assigned to: their initials and first name ("you" for yourself). */
+/** Who a task is assigned to: their picture (or initials) and first name ("you" for yourself). */
 export function AssigneeBadge({ member, isYou }: { member: Member; isYou: boolean }) {
   const label = isYou ? "You" : member.name.split(/\s+/)[0];
   return (
     <span className="inline-flex max-w-32 items-center gap-1 text-xs text-muted" title={`Assigned to ${member.name}`}>
-      <Avatar name={member.name} size="sm" />
+      <Avatar person={member} size="sm" />
       <span className="sr-only">Assigned to: </span>
       <span className="truncate">{label}</span>
     </span>

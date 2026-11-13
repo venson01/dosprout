@@ -7,6 +7,7 @@ import { OrganizationStore } from "./organization-store.js";
 import { authRoutes } from "./routes/auth.js";
 import { myWorkRoutes } from "./routes/my-work.js";
 import { organizationRoutes } from "./routes/organizations.js";
+import { profileRoutes } from "./routes/profile.js";
 import { goalRoutes } from "./routes/goals.js";
 import { settingsRoutes } from "./routes/settings.js";
 import { taskRoutes } from "./routes/tasks.js";
@@ -40,7 +41,7 @@ export function buildApp(options: AppOptions) {
 
   app.register(cors, {
     origin: options.corsOrigin ?? "http://localhost:3000",
-    methods: ["GET", "POST", "PATCH", "DELETE"],
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
     // Only matters when the website is on another domain (NEXT_PUBLIC_API_URL):
     // lets the browser send the login cookie and the team header.
     credentials: true,
@@ -83,6 +84,7 @@ export function buildApp(options: AppOptions) {
       loggedIn.addHook("onRequest", requireLogin(accounts));
       await loggedIn.register(teamRoutes, { prefix: "/api", teams, organizations });
       await loggedIn.register(organizationRoutes, { prefix: "/api", organizations, teams });
+      await loggedIn.register(profileRoutes, { prefix: "/api", accounts });
       // Across all your teams, so it doesn't use the X-Team-Id header.
       await loggedIn.register(myWorkRoutes, { prefix: "/api", db, teams });
 
