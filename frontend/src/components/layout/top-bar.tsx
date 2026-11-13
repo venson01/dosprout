@@ -3,11 +3,14 @@
 import { Menu, Search } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
+import { useAuth } from "@/hooks/auth-context";
+import { Avatar } from "./avatar";
 import { Notifications } from "./notifications";
 import { TimerPill } from "./timer-pill";
 
 export function TopBar({ onOpenMenu }: { onOpenMenu: () => void }) {
   const pathname = usePathname();
+  const { user, team } = useAuth();
 
   return (
     <header className="sticky top-0 z-20 flex items-center gap-3 border-b border-line bg-surface px-4 py-3 sm:px-6 lg:px-8">
@@ -30,16 +33,13 @@ export function TopBar({ onOpenMenu }: { onOpenMenu: () => void }) {
       <div className="ml-auto flex shrink-0 items-center gap-2 sm:gap-3">
         <TimerPill />
         <Notifications />
-        <div
-          aria-hidden
-          // Hidden on phones to leave room for the timer (it's only a "Guest" placeholder).
-          className="hidden size-9 place-items-center rounded-full bg-brand-soft text-sm font-semibold text-brand sm:grid"
-        >
-          G
+        {/* Hidden on phones to leave room for the timer (the sidebar shows the team there). */}
+        <div className="hidden sm:block">
+          <Avatar name={user.name} />
         </div>
-        <div className="hidden leading-tight sm:block">
-          <p className="text-sm font-medium">Guest</p>
-          <p className="text-xs text-muted">Not signed in</p>
+        <div className="hidden min-w-0 max-w-40 leading-tight sm:block">
+          <p className="truncate text-sm font-medium">{user.name}</p>
+          <p className="truncate text-xs text-muted">{team.personal ? "Personal" : team.name}</p>
         </div>
       </div>
     </header>

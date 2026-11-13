@@ -91,6 +91,99 @@ const MIGRATIONS: string[] = [
     data TEXT    NOT NULL
   );
   `,
+
+  // Version 7: accounts and teams.
+  // - users log in with an email and password; sessions remember who is logged in
+  //   (only a hash of each login token is stored, so a stolen database can't log anyone in).
+  // - every user has a "personal" team of one, plus any teams they create or are invited to.
+  // - tasks, goals and time entries belong to a team (team_id); time entries also to a user.
+  // - tasks can be assigned to a team member (assignee_id).
+  // - settings become per user (user_settings). The old shared settings row and all
+  //   existing data are taken over by the first person who signs up (see AccountStore).
+  `
+  CREATE TABLE users (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    email         TEXT    NOT NULL UNIQUE,
+    name          TEXT    NOT NULL,
+    password_hash TEXT    NOT NULL,
+    created_at    TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+  );
+  CREATE TABLE sessions (
+    token_hash TEXT    PRIMARY KEY,
+    user_id    INTEGER NOT NULL,
+    expires_at TEXT    NOT NULL,
+    created_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+  );
+  CREATE INDEX sessions_user_id ON sessions(user_id);
+  CREATE TABLE teams (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    name       TEXT    NOT NULL,
+    personal   INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+  );
+  CREATE TABLE team_members (
+    team_id   INTEGER NOT NULL,
+    user_id   INTEGER NOT NULL,
+    role      TEXT    NOT NULL DEFAULT 'member' CHECK (role IN ('owner', 'member')),
+    joined_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    PRIMARY KEY (team_id, user_id)
+  );
+  CREATE INDEX team_members_user_id ON team_members(user_id);
+  CREATE TABLE invites (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    team_id    INTEGER NOT NULL,
+    email      TEXT    NOT NULL,
+    token      TEXT    NOT NULL UNIQUE,
+    invited_by INTEGER NOT NULL,
+    created_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    expires_at TEXT    NOT NULL
+  );
+  CREATE INDEX invites_team_id ON invites(team_id);
+  CREATE TABLE user_settings (
+    user_id INTEGER PRIMARY KEY,
+    data    TEXT    NOT NULL
+  );
+  ALTER TABLE tasks ADD COLUMN team_id INTEGER;
+  ALTER TABLE tasks ADD COLUMN assignee_id INTEGER;
+  ALTER TABLE goals ADD COLUMN team_id INTEGER;
+  ALTER TABLE time_entries ADD COLUMN team_id INTEGER;
+  ALTER TABLE time_entries ADD COLUMN user_id INTEGER;
+  CREATE INDEX tasks_team_id ON tasks(team_id);
+  CREATE INDEX goals_team_id ON goals(team_id);
+  CREATE INDEX time_entries_team_id ON time_entries(team_id);
+  CREATE INDEX time_entries_user_id ON time_entries(user_id);
+  `,
+
+  // Version 8: organizations. An organization groups teams (teams.organization_id, or NULL
+  // for a team on its own). Its members are "admin" or "member"; admins invite people with
+  // organization_invites links and can manage every team in it.
+  `
+  CREATE TABLE organizations (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    name       TEXT    NOT NULL,
+    created_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+  );
+  CREATE TABLE organization_members (
+    organization_id INTEGER NOT NULL,
+    user_id         INTEGER NOT NULL,
+    role            TEXT    NOT NULL DEFAULT 'member' CHECK (role IN ('admin', 'member')),
+    joined_at       TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    PRIMARY KEY (organization_id, user_id)
+  );
+  CREATE INDEX organization_members_user_id ON organization_members(user_id);
+  CREATE TABLE organization_invites (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    organization_id INTEGER NOT NULL,
+    email           TEXT    NOT NULL,
+    token           TEXT    NOT NULL UNIQUE,
+    invited_by      INTEGER NOT NULL,
+    created_at      TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    expires_at      TEXT    NOT NULL
+  );
+  CREATE INDEX organization_invites_organization_id ON organization_invites(organization_id);
+  ALTER TABLE teams ADD COLUMN organization_id INTEGER;
+  CREATE INDEX teams_organization_id ON teams(organization_id);
+  `,
 ];
 
 export interface OpenDatabaseOptions {
@@ -103,11 +196,13 @@ export interface OpenDatabaseOptions {
   url: string;
   /** Password-like token for a Turso cloud database. Not needed for files or ":memory:". */
   authToken?: string;
-  /** Add a few example tasks when the database is brand new. */
-  seed?: boolean;
 }
 
-export async function openDatabase({ url, authToken, seed = false }: OpenDatabaseOptions) {
+/**
+ * Connects to the database and brings its tables up to date (runs the MIGRATIONS it
+ * hasn't run yet). Example tasks are added per new account, not here (see example-data.ts).
+ */
+export async function openDatabase({ url, authToken }: OpenDatabaseOptions) {
   const db = await connect(url, authToken);
 
   const startVersion = await schemaVersion(db);
@@ -120,9 +215,6 @@ export async function openDatabase({ url, authToken, seed = false }: OpenDatabas
       sql: "UPDATE schema_version SET version = ?",
       args: [MIGRATIONS.length],
     });
-  }
-  if (startVersion === 0 && seed) {
-    statements.push(...exampleTaskStatements());
   }
   // batch() runs everything in one transaction: either it all works, or nothing changes.
   if (statements.length > 0) {
@@ -177,84 +269,4 @@ function splitStatements(sql: string): string[] {
     .split(";")
     .map((statement) => statement.trim())
     .filter((statement) => statement.length > 0);
-}
-
-/** A UTC timestamp for a local time a number of days from today, e.g. (2, 17) = 5 PM the day after tomorrow. */
-function daysFromToday(days: number, hour: number, minute = 0): string {
-  const date = new Date();
-  date.setDate(date.getDate() + days);
-  date.setHours(hour, minute, 0, 0);
-  return date.toISOString();
-}
-
-/** A local day a number of days from today, as "2026-10-13" (for goal target dates). */
-function dayFromToday(days: number): string {
-  return daysFromToday(days, 12).slice(0, 10);
-}
-
-// Example data so the app doesn't look empty the first time you open it.
-// The database is brand new here, so we can choose the ids ourselves.
-function exampleTaskStatements(): InStatement[] {
-  // One example goal; the three work tasks belong to it (goal: 1).
-  const goal: InStatement = {
-    sql: "INSERT INTO goals (id, title, description, color, target_date) VALUES (?, ?, ?, ?, ?)",
-    args: [
-      1,
-      "Launch the new website",
-      "Everything needed before the site goes live.",
-      "blue",
-      dayFromToday(14),
-    ],
-  };
-  const examples = [
-    { title: "Website Development", status: "todo", priority: "high", tag: "Work", start: 1, due: 2, goal: 1, estimate: 480,
-      subtasks: [["Wireframes", 0], ["Build landing page", 0], ["Connect API", 0], ["Deploy", 0]] },
-    { title: "Update Contact Form", status: "todo", priority: "mid", tag: "Work", start: 2, due: 3, goal: 1, estimate: 90,
-      subtasks: [["Add phone field", 0], ["Validate email", 0]] },
-    { title: "Do back exercises", status: "in_progress", priority: "mid", tag: "Health", start: 0, due: 2, goal: null, estimate: 30,
-      subtasks: [["Stretch", 1], ["Plank", 1], ["Bridges", 0]] },
-    { title: "Integrate Payment Gateway", status: "in_progress", priority: "low", tag: "Work", start: -1, due: 2, goal: 1, estimate: 240,
-      subtasks: [["Create sandbox account", 1], ["Checkout page", 1], ["Webhooks", 0]] },
-    { title: "Visit a dermatologist", status: "done", priority: "high", tag: "Health", start: -2, due: -1, goal: null, estimate: null,
-      subtasks: [["Book appointment", 1]] },
-  ] as const;
-
-  // A little tracked time, so the Time page has something to show: [task, days ago, start, end].
-  const time = [
-    [4, -1, [9, 0], [10, 30]],
-    [3, -1, [18, 0], [18, 25]],
-    [4, 0, [9, 15], [10, 0]],
-  ] as const;
-  const timeEntries: InStatement[] = time.map(([taskId, day, [h1, m1], [h2, m2]]) => ({
-    sql: "INSERT INTO time_entries (task_id, kind, started_at, ended_at) VALUES (?, 'timer', ?, ?)",
-    args: [taskId, daysFromToday(day, h1, m1), daysFromToday(day, h2, m2)],
-  }));
-
-  return [goal, ...timeEntries, ...examples.flatMap((example, index) => {
-    const taskId = index + 1;
-    return [
-      {
-        sql: `INSERT INTO tasks (id, title, status, priority, tag, start_at, due_at, position, completed_at, goal_id, estimate_minutes)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        args: [
-          taskId,
-          example.title,
-          example.status,
-          example.priority,
-          example.tag,
-          daysFromToday(example.start, 9),
-          daysFromToday(example.due, 17),
-          index,
-          // Finished examples were "completed" at noon on their due day.
-          example.status === "done" ? daysFromToday(example.due, 12) : null,
-          example.goal,
-          example.estimate,
-        ],
-      },
-      ...example.subtasks.map(([title, done], position) => ({
-        sql: "INSERT INTO subtasks (task_id, title, done, position) VALUES (?, ?, ?, ?)",
-        args: [taskId, title, done, position],
-      })),
-    ];
-  })];
 }

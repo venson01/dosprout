@@ -1,20 +1,32 @@
 "use client";
 
 import { useState } from "react";
+import { AuthProvider, useAuth } from "@/hooks/auth-context";
 import { TasksProvider } from "@/hooks/tasks-context";
 import { ThemeSync } from "./theme-sync";
 import { TimerPopout } from "./timer-popout";
 import { Sidebar } from "./sidebar";
 import { TopBar } from "./top-bar";
 
-/** The frame around every page: dark sidebar on the left, search bar on top. */
+/** The frame around every app page: dark sidebar on the left, search bar on top. */
 export function AppShell({ children }: { children: React.ReactNode }) {
+  return (
+    // Who is logged in is loaded first (not logged in = off to the login page).
+    <AuthProvider>
+      <TeamFrame>{children}</TeamFrame>
+    </AuthProvider>
+  );
+}
+
+function TeamFrame({ children }: { children: React.ReactNode }) {
+  const { team } = useAuth();
   // On small screens the sidebar is hidden until the menu button is pressed.
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (
-    // The tasks are loaded here, once, so every page and the notification bell share them.
-    <TasksProvider>
+    // The team's tasks are loaded here, once, so every page and the notification bell share them.
+    // key: switching teams starts TasksProvider over, so nothing from the old team stays on screen.
+    <TasksProvider key={team.id}>
       <ThemeSync />
       <TimerPopout />
       <div className="min-h-dvh lg:flex">

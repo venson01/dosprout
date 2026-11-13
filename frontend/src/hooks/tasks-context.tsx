@@ -2,6 +2,7 @@
 
 import { createContext, useContext } from "react";
 import { upcomingMoments } from "@/lib/notifications";
+import { useAuth } from "./auth-context";
 import { useClock } from "./use-clock";
 import { useTasks } from "./use-tasks";
 import { useTimer } from "./use-timer";
@@ -16,11 +17,13 @@ type TaskList = ReturnType<typeof useTasks> & {
 const TasksContext = createContext<TaskList | null>(null);
 
 /**
- * Loads the tasks (plus goals and tracked time) once for the whole app, so every
- * page, the notification bell and the timer in the top bar share the same data.
+ * Loads the current team's tasks (plus goals, members and tracked time) once for the
+ * whole app, so every page, the notification bell and the timer in the top bar share
+ * the same data. AppShell gives it a new key when you switch teams, so it starts over.
  */
 export function TasksProvider({ children }: { children: React.ReactNode }) {
-  const taskList = useTasks();
+  const { team } = useAuth();
+  const taskList = useTasks(team.id);
   const now = useClock(upcomingMoments(taskList.tasks));
   const timer = useTimer(taskList.timeEntries, taskList, taskList.settings);
   return <TasksContext value={{ ...taskList, now, timer }}>{children}</TasksContext>;

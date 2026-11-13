@@ -1,12 +1,25 @@
 import type {
+  AcceptedInvite,
   Backup,
   CreateGoalInput,
   CreateTaskInput,
   CreateTimeEntryInput,
   Goal,
+  Invite,
+  InvitePreview,
+  LoginInput,
+  Me,
+  Member,
+  MyWorkGroup,
+  OrganizationDetails,
+  OrganizationInvite,
+  OrganizationRole,
+  OrganizationSummary,
   Settings,
+  SignupInput,
   StartTimerInput,
   Task,
+  TeamSummary,
   TimeEntry,
   UpdateGoalInput,
   UpdateSettingsInput,
@@ -22,6 +35,15 @@ export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 
 const UNREACHABLE = "Can't reach the API. Is the backend running?";
 
+// The team the app is showing. Every request says which team it's about with the
+// X-Team-Id header, and the backend only answers with that team's tasks, goals and time.
+// AuthProvider sets it (hooks/auth-context.tsx). null = your personal team.
+let currentTeamId: number | null = null;
+
+export function setCurrentTeamId(teamId: number | null) {
+  currentTeamId = teamId;
+}
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -31,12 +53,19 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+/** `teamId`: the team the request is about, if not the current one (used by "My work"). */
+async function request<T>(path: string, init: RequestInit = {}, teamId = currentTeamId): Promise<T> {
   let response: Response;
   try {
+    const headers: Record<string, string> = {};
+    if (init.body) headers["Content-Type"] = "application/json";
+    if (teamId !== null) headers["X-Team-Id"] = String(teamId);
     response = await fetch(`${API_URL}/api${path}`, {
       ...init,
-      headers: init.body ? { "Content-Type": "application/json" } : undefined,
+      headers,
+      // Send the login cookie. (Same-site requests do this anyway; this is for a
+      // backend on another domain, see NEXT_PUBLIC_API_URL.)
+      credentials: "include",
     });
   } catch {
     // fetch only throws when the server can't be reached at all.
@@ -58,6 +87,70 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 const json = (body: unknown) => JSON.stringify(body);
 
 export const api = {
+  // ---- Accounts ----
+  /** Who is logged in (401 if nobody). */
+  me: () => request<Me>("/auth/me"),
+  signUp: (input: SignupInput) => request<Me>("/auth/signup", { method: "POST", body: json(input) }),
+  logIn: (input: LoginInput) => request<Me>("/auth/login", { method: "POST", body: json(input) }),
+  logOut: () => request<void>("/auth/logout", { method: "POST" }),
+
+  // ---- Teams ----
+  /** organizationId: create it in one of your organizations (null / left out: on its own). */
+  createTeam: (name: string, organizationId: number | null = null) =>
+    request<TeamSummary>("/teams", { method: "POST", body: json({ name, organizationId }) }),
+  renameTeam: (teamId: number, name: string) =>
+    request<TeamSummary>(`/teams/${teamId}`, { method: "PATCH", body: json({ name }) }),
+  /** Moves a team into an organization, or out of it (null). */
+  moveTeam: (teamId: number, organizationId: number | null) =>
+    request<TeamSummary>(`/teams/${teamId}`, { method: "PATCH", body: json({ organizationId }) }),
+  /** In an organization's team: adds a colleague straight away. Returns the new member list. */
+  addTeamMember: (teamId: number, userId: number) =>
+    request<Member[]>(`/teams/${teamId}/members`, { method: "POST", body: json({ userId }) }),
+  deleteTeam: (teamId: number) => request<void>(`/teams/${teamId}`, { method: "DELETE" }),
+  listMembers: (teamId: number) => request<Member[]>(`/teams/${teamId}/members`),
+  /** The owner removes someone, or you leave (your own user id). */
+  removeMember: (teamId: number, userId: number) =>
+    request<void>(`/teams/${teamId}/members/${userId}`, { method: "DELETE" }),
+  listInvites: (teamId: number) => request<Invite[]>(`/teams/${teamId}/invites`),
+  createInvite: (teamId: number, email: string) =>
+    request<Invite>(`/teams/${teamId}/invites`, { method: "POST", body: json({ email }) }),
+  deleteInvite: (teamId: number, inviteId: number) =>
+    request<void>(`/teams/${teamId}/invites/${inviteId}`, { method: "DELETE" }),
+  /** What an invite link is for: a team or an organization (works without logging in). */
+  previewInvite: (token: string) => request<InvitePreview>(`/invites/${encodeURIComponent(token)}`),
+  acceptInvite: (token: string) =>
+    request<AcceptedInvite>(`/invites/${encodeURIComponent(token)}/accept`, { method: "POST" }),
+
+  // ---- Organizations ----
+  createOrganization: (name: string) =>
+    request<OrganizationSummary>("/organizations", { method: "POST", body: json({ name }) }),
+  /** Its teams (with open / overdue counts) and members (with their teams). */
+  getOrganization: (id: number) => request<OrganizationDetails>(`/organizations/${id}`),
+  renameOrganization: (id: number, name: string) =>
+    request<OrganizationSummary>(`/organizations/${id}`, { method: "PATCH", body: json({ name }) }),
+  /** Its teams are kept, on their own. */
+  deleteOrganization: (id: number) => request<void>(`/organizations/${id}`, { method: "DELETE" }),
+  setOrganizationRole: (id: number, userId: number, role: OrganizationRole) =>
+    request<void>(`/organizations/${id}/members/${userId}`, { method: "PATCH", body: json({ role }) }),
+  /** Out of the organization and all its teams (your own user id = leave). */
+  removeOrganizationMember: (id: number, userId: number) =>
+    request<void>(`/organizations/${id}/members/${userId}`, { method: "DELETE" }),
+  /** Admins: join one of the organization's teams. */
+  joinOrganizationTeam: (id: number, teamId: number) =>
+    request<TeamSummary>(`/organizations/${id}/teams/${teamId}/join`, { method: "POST" }),
+  listOrganizationInvites: (id: number) => request<OrganizationInvite[]>(`/organizations/${id}/invites`),
+  createOrganizationInvite: (id: number, email: string) =>
+    request<OrganizationInvite>(`/organizations/${id}/invites`, { method: "POST", body: json({ email }) }),
+  deleteOrganizationInvite: (id: number, inviteId: number) =>
+    request<void>(`/organizations/${id}/invites/${inviteId}`, { method: "DELETE" }),
+
+  // ---- My work (all your teams at once) ----
+  myWork: () => request<MyWorkGroup[]>("/my-work"),
+  /** Changes a task in a given team (My work shows tasks from every team). */
+  updateTaskInTeam: (teamId: number, id: number, input: UpdateTaskInput) =>
+    request<Task>(`/tasks/${id}`, { method: "PATCH", body: json(input) }, teamId),
+
+  // ---- Tasks, goals and time (in the current team) ----
   listTasks: () => request<Task[]>("/tasks"),
   getTask: (id: number) => request<Task>(`/tasks/${id}`),
   createTask: (input: CreateTaskInput) =>
@@ -96,11 +189,11 @@ export const api = {
   getSettings: () => request<Settings>("/settings"),
   updateSettings: (input: UpdateSettingsInput) =>
     request<Settings>("/settings", { method: "PATCH", body: json(input) }),
-  /** Everything as one object, for a backup file. */
+  /** The current team's data as one object, for a backup file. */
   exportData: () => request<Backup>("/export"),
-  /** Replaces ALL data with a backup's. */
+  /** Replaces ALL of the current team's data with a backup's (owners only). */
   importData: (backup: unknown) =>
     request<{ ok: true }>("/import", { method: "POST", body: json(backup) }),
-  /** Deletes every task, goal and time entry (settings stay). */
+  /** Deletes every task, goal and time entry in the current team (owners only; settings stay). */
   deleteAllData: () => request<void>("/data", { method: "DELETE" }),
 };

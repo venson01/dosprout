@@ -1,5 +1,4 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
-import type { GoalStore } from "../goal-store.js";
 import { GOAL_COLORS, type CreateGoalInput, type UpdateGoalInput } from "../types.js";
 
 // JSON schemas: Fastify rejects bad requests with a 400 error before our code runs.
@@ -25,15 +24,14 @@ function notFound(reply: FastifyReply) {
   return reply.code(404).send({ statusCode: 404, error: "Not Found", message: "Goal not found" });
 }
 
-export async function goalRoutes(app: FastifyInstance, opts: { goals: GoalStore }) {
-  const { goals } = opts;
-
-  app.get("/goals", async () => goals.list());
+/** Goal routes. Like the task routes, they work on request.team's goals (request.stores.goals). */
+export async function goalRoutes(app: FastifyInstance) {
+  app.get("/goals", async (request) => request.stores.goals.list());
 
   app.get<{ Params: GoalParams }>(
     "/goals/:id",
     { schema: { params: goalIdParams } },
-    async (request, reply) => (await goals.get(request.params.id)) ?? notFound(reply),
+    async (request, reply) => (await request.stores.goals.get(request.params.id)) ?? notFound(reply),
   );
 
   app.post<{ Body: CreateGoalInput }>(
@@ -48,7 +46,7 @@ export async function goalRoutes(app: FastifyInstance, opts: { goals: GoalStore 
         },
       },
     },
-    async (request, reply) => reply.code(201).send(await goals.create(request.body)),
+    async (request, reply) => reply.code(201).send(await request.stores.goals.create(request.body)),
   );
 
   app.patch<{ Params: GoalParams; Body: UpdateGoalInput }>(
@@ -60,7 +58,7 @@ export async function goalRoutes(app: FastifyInstance, opts: { goals: GoalStore 
       },
     },
     async (request, reply) =>
-      (await goals.update(request.params.id, request.body)) ?? notFound(reply),
+      (await request.stores.goals.update(request.params.id, request.body)) ?? notFound(reply),
   );
 
   // The goal's tasks are kept; they just no longer belong to a goal.
@@ -68,7 +66,7 @@ export async function goalRoutes(app: FastifyInstance, opts: { goals: GoalStore 
     "/goals/:id",
     { schema: { params: goalIdParams } },
     async (request, reply) => {
-      if (!(await goals.delete(request.params.id))) return notFound(reply);
+      if (!(await request.stores.goals.delete(request.params.id))) return notFound(reply);
       return reply.code(204).send();
     },
   );

@@ -6,12 +6,12 @@ import {
   CircleCheck,
   Flower2,
   Leaf,
-  ListChecks,
   Shovel,
   Sparkles,
   Sprout,
   Star,
   Timer,
+  Users,
   type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
@@ -20,7 +20,7 @@ import { AppPreview } from "./app-preview";
 /*
   The landing page at "/" (designed in Figma: "DoSprout Landing Page").
   It has no data and no state, so it's a server component: plain HTML + CSS, no JavaScript needed.
-  The app itself starts at /tasks.
+  The app itself starts at /tasks (after signing up or logging in).
 
   Playful touches (floating leaves, swaying sprouts, the drawn underline, card effects) use the
   animations in globals.css. Every moving part has motion-reduce:... so people who turn on
@@ -40,14 +40,14 @@ const FEATURES: { icon: LucideIcon; title: string; text: string; href: string }[
   {
     icon: CircleCheck,
     title: "Tasks your way",
-    text: "Switch between a tidy list and a drag-and-drop board. Add tags, priorities, start and due dates.",
+    text: "A tidy list or a drag-and-drop board, with tags, priorities, dates, and subtasks that move the task along by themselves.",
     href: "/tasks",
   },
   {
-    icon: ListChecks,
-    title: "Subtasks that update for you",
-    text: "Tick off subtasks and DoSprout moves the task along by itself: to do, in progress, done.",
-    href: "/tasks?view=board",
+    icon: Users,
+    title: "Plan together",
+    text: "Create a team, invite people with a link, and assign tasks and shared goals to each other.",
+    href: "/team",
   },
   {
     icon: Star,
@@ -185,9 +185,14 @@ function Header() {
             </a>
           ))}
         </nav>
-        <Link href="/tasks" className={`${PRIMARY} px-4 py-2 text-sm sm:px-6 sm:py-3 sm:text-base`}>
-          Open DoSprout
-        </Link>
+        <div className="flex items-center gap-2 sm:gap-4">
+          <Link href="/login" className="rounded-md px-2 py-1 text-sm font-medium text-muted hover:text-ink">
+            Log in
+          </Link>
+          <Link href="/signup" className={`${PRIMARY} px-4 py-2 text-sm sm:px-6 sm:py-3 sm:text-base`}>
+            Sign up
+          </Link>
+        </div>
       </div>
     </header>
   );
@@ -211,7 +216,7 @@ function Hero() {
 
         <p className="inline-flex items-center gap-2 rounded-full bg-brand-soft px-4 py-1 text-xs font-medium text-brand">
           <Sprout className="size-3.5 origin-bottom animate-sway motion-reduce:animate-none" aria-hidden />
-          Free to use · No sign-up needed
+          Free to use · Plan alone or with your team
         </p>
         <h1 className="text-4xl font-bold tracking-tight text-balance sm:text-5xl lg:text-6xl lg:leading-[1.12]">
           Plant a task.
@@ -223,7 +228,7 @@ function Hero() {
           do next.
         </p>
         <div className="flex flex-wrap justify-center gap-4">
-          <Link href="/tasks" className={`${PRIMARY} group`}>
+          <Link href="/signup" className={`${PRIMARY} group`}>
             Start planning
             <ArrowRight
               className="size-5 transition-transform group-hover:translate-x-1 motion-reduce:transition-none"
@@ -502,10 +507,11 @@ function CallToAction() {
           Your to-do list is ready to sprout
         </h2>
         <p className="max-w-xl text-lg text-pretty text-white/85">
-          It&apos;s free, there&apos;s nothing to install and no account to create. Open it and add your first task.
+          It&apos;s free and there&apos;s nothing to install. Create an account, add your first task, and invite
+          your team when you&apos;re ready.
         </p>
-        <Link href="/tasks" className={`${INVERSE} group`}>
-          Open DoSprout
+        <Link href="/signup" className={`${INVERSE} group`}>
+          Create your free account
           <ArrowRight
             className="size-5 transition-transform group-hover:translate-x-1 motion-reduce:transition-none"
             aria-hidden

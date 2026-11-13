@@ -39,25 +39,43 @@ const UPDATABLE_COLUMNS = {
   note: "note",
 } as const satisfies Record<keyof UpdateTimeEntryInput, string>;
 
-// Stops whatever timer is running (there's at most one).
-const STOP_RUNNING: InStatement = `UPDATE time_entries SET ended_at = ${NOW} WHERE ended_at IS NULL`;
-
 /**
  * All database reads and writes for tracked time. A time entry is a stretch of
  * time spent (on a task, or on nothing in particular). While a timer runs, its
- * entry has no end yet (ended_at IS NULL). Only one timer runs at a time.
+ * entry has no end yet (ended_at IS NULL).
+ *
+ * Tracked time is personal: a TimeStore sees only ONE person's entries in ONE team.
+ * Each person has at most one running timer (across all their teams).
  */
 export class TimeStore {
-  constructor(private readonly db: Client) {}
+  constructor(
+    private readonly db: Client,
+    private readonly teamId: number,
+    private readonly userId: number,
+  ) {}
 
-  /** All entries, newest first. */
+  // Stops this person's running timer, in whichever team it runs.
+  private stopRunning(): InStatement {
+    return {
+      sql: `UPDATE time_entries SET ended_at = ${NOW} WHERE ended_at IS NULL AND user_id = ?`,
+      args: [this.userId],
+    };
+  }
+
+  /** This person's entries in this team, newest first. */
   async list(): Promise<TimeEntry[]> {
-    const { rows } = await this.db.execute("SELECT * FROM time_entries ORDER BY started_at DESC, id DESC");
+    const { rows } = await this.db.execute({
+      sql: "SELECT * FROM time_entries WHERE team_id = ? AND user_id = ? ORDER BY started_at DESC, id DESC",
+      args: [this.teamId, this.userId],
+    });
     return (rows as unknown as TimeEntryRow[]).map(toTimeEntry);
   }
 
   async get(id: number): Promise<TimeEntry | undefined> {
-    const { rows } = await this.db.execute({ sql: "SELECT * FROM time_entries WHERE id = ?", args: [id] });
+    const { rows } = await this.db.execute({
+      sql: "SELECT * FROM time_entries WHERE id = ? AND team_id = ? AND user_id = ?",
+      args: [id, this.teamId, this.userId],
+    });
     const row = rows[0] as unknown as TimeEntryRow | undefined;
     return row && toTimeEntry(row);
   }
@@ -67,10 +85,10 @@ export class TimeStore {
     // One batch = one transaction, so there's never a moment with two running timers.
     const [, inserted] = await this.db.batch(
       [
-        STOP_RUNNING,
+        this.stopRunning(),
         {
-          sql: `INSERT INTO time_entries (task_id, kind, started_at) VALUES (?, ?, ${NOW})`,
-          args: [input.taskId ?? null, input.kind ?? "timer"],
+          sql: `INSERT INTO time_entries (team_id, user_id, task_id, kind, started_at) VALUES (?, ?, ?, ?, ${NOW})`,
+          args: [this.teamId, this.userId, input.taskId ?? null, input.kind ?? "timer"],
         },
       ],
       "write",
@@ -78,20 +96,25 @@ export class TimeStore {
     return (await this.get(Number(inserted.lastInsertRowid)))!;
   }
 
-  /** Stops the running timer. Returns it, or undefined if none was running. */
+  /** Stops this person's running timer (in any team). Returns it, or undefined if none was running. */
   async stop(): Promise<TimeEntry | undefined> {
-    const { rows } = await this.db.execute("SELECT id FROM time_entries WHERE ended_at IS NULL");
-    const running = rows[0] as unknown as { id: number } | undefined;
-    if (!running) return undefined;
-    await this.db.execute(STOP_RUNNING);
-    return this.get(running.id);
+    const running = { sql: "SELECT * FROM time_entries WHERE ended_at IS NULL AND user_id = ?", args: [this.userId] };
+    const { rows } = await this.db.execute(running);
+    if (rows.length === 0) return undefined;
+    const id = Number(rows[0].id);
+    await this.db.execute(this.stopRunning());
+    const stopped = await this.db.execute({ sql: "SELECT * FROM time_entries WHERE id = ?", args: [id] });
+    return toTimeEntry(stopped.rows[0] as unknown as TimeEntryRow);
   }
 
   /** Adds time by hand (it already has a start and an end). */
   async create(input: CreateTimeEntryInput): Promise<TimeEntry> {
     const result = await this.db.execute({
-      sql: "INSERT INTO time_entries (task_id, kind, started_at, ended_at, note) VALUES (?, 'manual', ?, ?, ?)",
+      sql: `INSERT INTO time_entries (team_id, user_id, task_id, kind, started_at, ended_at, note)
+            VALUES (?, ?, ?, 'manual', ?, ?, ?)`,
       args: [
+        this.teamId,
+        this.userId,
         input.taskId ?? null,
         toUtcTimestamp(input.startedAt),
         toUtcTimestamp(input.endedAt),
@@ -114,8 +137,8 @@ export class TimeStore {
     }
     if (assignments.length > 0) {
       await this.db.execute({
-        sql: `UPDATE time_entries SET ${assignments.join(", ")} WHERE id = ?`,
-        args: [...args, id],
+        sql: `UPDATE time_entries SET ${assignments.join(", ")} WHERE id = ? AND team_id = ? AND user_id = ?`,
+        args: [...args, id, this.teamId, this.userId],
       });
     }
     return this.get(id);
@@ -123,7 +146,10 @@ export class TimeStore {
 
   /** Returns false if no entry had this id. */
   async delete(id: number): Promise<boolean> {
-    const { rowsAffected } = await this.db.execute({ sql: "DELETE FROM time_entries WHERE id = ?", args: [id] });
+    const { rowsAffected } = await this.db.execute({
+      sql: "DELETE FROM time_entries WHERE id = ? AND team_id = ? AND user_id = ?",
+      args: [id, this.teamId, this.userId],
+    });
     return rowsAffected > 0;
   }
 }

@@ -4,6 +4,7 @@ import { Check, Download, Monitor, Moon, Plus, Sun, Trash, Upload, Volume2, X } 
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { DesktopNotificationsSetting } from "@/components/layout/notifications";
 import { ErrorToast, LoadError, LoadingSkeleton } from "@/components/tasks/feedback";
+import { useAuth } from "@/hooks/auth-context";
 import { useTaskList } from "@/hooks/tasks-context";
 import { api } from "@/lib/api";
 import { dayKey } from "@/lib/calendar";
@@ -89,8 +90,8 @@ export function SettingsView() {
           <TaskDefaultsSection settings={settings} save={save} onError={setToast} />
           <DataSection onError={setToast} onDone={reload} />
           <p className="text-center text-xs text-muted">
-            Settings are saved on the server, so they&apos;re the same in every browser. There are
-            no accounts yet, so everyone using this DoSprout shares them.
+            Settings are saved with your account, so they follow you to every browser. They&apos;re
+            yours alone: teammates have their own.
           </p>
         </div>
       )}
@@ -406,6 +407,11 @@ function TaskDefaultsSection({ settings, save, onError }: SectionProps & { onErr
 
 /** Backup (download), restore (upload) and delete everything. */
 function DataSection({ onError, onDone }: { onError: (message: string) => void; onDone: () => void }) {
+  const { team } = useAuth();
+  // Restoring and deleting change the data for everyone in a team, so only its managers may
+  // (its owner, or an admin of its organization).
+  const owner = team.canManage;
+  const space = team.personal ? "your personal space" : team.name;
   const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState<"export" | "import" | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -439,7 +445,7 @@ function DataSection({ onError, onDone }: { onError: (message: string) => void; 
     }
     const counts = `${backup.tasks?.length ?? 0} tasks, ${backup.goals?.length ?? 0} goals and ${backup.timeEntries?.length ?? 0} time entries`;
     const replace = window.confirm(
-      `Restore "${file.name}"?\n\nThis REPLACES all your current tasks, goals, tracked time and settings with the backup's (${counts}). Download a backup of what you have now first if you might want it back.`,
+      `Restore "${file.name}" into ${space}?\n\nThis REPLACES all the tasks, goals and tracked time in ${space}, and your settings, with the backup's (${counts}). Download a backup of what you have now first if you might want it back.`,
     );
     if (!replace) return;
     setBusy("import");
@@ -454,7 +460,10 @@ function DataSection({ onError, onDone }: { onError: (message: string) => void; 
   }
 
   return (
-    <Section title="Data" description="Your tasks, goals, tracked time and settings.">
+    <Section
+      title="Data"
+      description={`The tasks and goals in ${space}, your tracked time there, and your settings. Switch spaces in the sidebar to back up another one.`}
+    >
       <div className="flex flex-wrap gap-2">
         <button
           type="button"
@@ -468,7 +477,8 @@ function DataSection({ onError, onDone }: { onError: (message: string) => void; 
         <button
           type="button"
           onClick={() => fileRef.current?.click()}
-          disabled={busy !== null}
+          disabled={busy !== null || !owner}
+          title={owner ? undefined : "Only the team's owner (or an organization admin) can restore a backup"}
           className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-brand ring-1 ring-line hover:bg-brand-soft disabled:opacity-60"
         >
           <Upload className="size-4" />
@@ -488,12 +498,14 @@ function DataSection({ onError, onDone }: { onError: (message: string) => void; 
       </div>
       <p className="mt-2 text-xs text-muted">
         The backup is a .json file with everything in it. Restoring one replaces what&apos;s here.
+        {!owner && " Only the team's owner (or an organization admin) can restore a backup or delete the team's data."}
       </p>
 
+      {owner && (
       <div className="mt-5 flex flex-wrap items-center gap-3 rounded-lg border border-high/40 bg-high-bg px-4 py-3">
         <div className="min-w-0 flex-1">
           <p className="text-sm font-medium text-high">Delete all data</p>
-          <p className="text-xs text-muted">Deletes every task, goal and time entry. Settings are kept.</p>
+          <p className="text-xs text-muted">Deletes every task, goal and time entry in {space}. Settings are kept.</p>
         </div>
         <button
           type="button"
@@ -504,9 +516,11 @@ function DataSection({ onError, onDone }: { onError: (message: string) => void; 
           Delete all
         </button>
       </div>
+      )}
 
       {confirmingDelete && (
         <DeleteAllDialog
+          space={space}
           onClose={() => setConfirmingDelete(false)}
           onDeleted={() => {
             setConfirmingDelete(false);
@@ -519,7 +533,7 @@ function DataSection({ onError, onDone }: { onError: (message: string) => void; 
 }
 
 /** Asks you to type DELETE before everything is deleted, so it can't happen by accident. */
-function DeleteAllDialog({ onClose, onDeleted }: { onClose: () => void; onDeleted: () => void }) {
+function DeleteAllDialog({ space, onClose, onDeleted }: { space: string; onClose: () => void; onDeleted: () => void }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [typed, setTyped] = useState("");
   const [deleting, setDeleting] = useState(false);
@@ -560,7 +574,7 @@ function DeleteAllDialog({ onClose, onDeleted }: { onClose: () => void; onDelete
           Delete all data?
         </h2>
         <p className="text-sm text-muted">
-          This deletes every task, goal and time entry for everyone using this DoSprout. It
+          This deletes every task, goal and time entry in {space}, for everyone in it. It
           can&apos;t be undone, so download a backup first if you might want them back.
         </p>
         <div>
