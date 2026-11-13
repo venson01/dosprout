@@ -102,9 +102,12 @@ export function useTeam(db: Client, teams: TeamStore) {
   };
 }
 
-/** Replies 403 unless you own request.team. Returns true when it replied. */
-export function notOwner(request: FastifyRequest, reply: FastifyReply, message: string): boolean {
-  if (request.team.role === "owner") return false;
+/**
+ * Replies 403 unless you may manage request.team (you own it, or you're an admin of its
+ * organization). Returns true when it replied.
+ */
+export function cannotManage(request: FastifyRequest, reply: FastifyReply, message: string): boolean {
+  if (request.team.canManage) return false;
   sendError(reply, 403, "Forbidden", message);
   return true;
 }

@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
-import { notOwner } from "../auth.js";
+import { cannotManage } from "../auth.js";
 import type { TeamStore } from "../team-store.js";
 import {
   GOAL_COLORS,
@@ -176,7 +176,9 @@ export async function settingsRoutes(app: FastifyInstance, opts: { teams: TeamSt
     "/import",
     { bodyLimit: 20 * 1024 * 1024, schema: { body: backupSchema } },
     async (request, reply) => {
-      if (notOwner(request, reply, "Only the team's owner can replace its data with a backup.")) return reply;
+      if (cannotManage(request, reply, "Only the team's owner (or an organization admin) can replace its data with a backup.")) {
+        return reply;
+      }
       const problem = brokenLink(request.body);
       if (problem) return badRequest(reply, `This backup file is damaged: ${problem}`);
       const members = await teams.members(request.team.id);
@@ -187,7 +189,9 @@ export async function settingsRoutes(app: FastifyInstance, opts: { teams: TeamSt
 
   // Deletes every task, goal and time entry in the team (settings stay).
   app.delete("/data", async (request, reply) => {
-    if (notOwner(request, reply, "Only the team's owner can delete all of its data.")) return reply;
+    if (cannotManage(request, reply, "Only the team's owner (or an organization admin) can delete all of its data.")) {
+      return reply;
+    }
     await request.stores.backup.deleteAll();
     return reply.code(204).send();
   });

@@ -3,8 +3,10 @@ import Fastify, { type FastifyServerOptions } from "fastify";
 import { AccountStore } from "./account-store.js";
 import { requireLogin, TEAM_HEADER, useTeam } from "./auth.js";
 import { openDatabase } from "./db.js";
+import { OrganizationStore } from "./organization-store.js";
 import { authRoutes } from "./routes/auth.js";
 import { myWorkRoutes } from "./routes/my-work.js";
+import { organizationRoutes } from "./routes/organizations.js";
 import { goalRoutes } from "./routes/goals.js";
 import { settingsRoutes } from "./routes/settings.js";
 import { taskRoutes } from "./routes/tasks.js";
@@ -57,6 +59,7 @@ export function buildApp(options: AppOptions) {
     api.addHook("onClose", async () => db.close());
     const accounts = new AccountStore(db);
     const teams = new TeamStore(db);
+    const organizations = new OrganizationStore(db);
 
     // Our hooks fill these in on each request (see auth.ts). Fastify wants to know
     // about them up front.
@@ -69,6 +72,7 @@ export function buildApp(options: AppOptions) {
       prefix: "/api",
       accounts,
       teams,
+      organizations,
       seed: options.seed ?? false,
       secureCookies: options.secureCookies ?? false,
     });
@@ -77,7 +81,8 @@ export function buildApp(options: AppOptions) {
     // routes registered in there. "onRequest" runs first, before the body is even read.
     await api.register(async (loggedIn) => {
       loggedIn.addHook("onRequest", requireLogin(accounts));
-      await loggedIn.register(teamRoutes, { prefix: "/api", teams });
+      await loggedIn.register(teamRoutes, { prefix: "/api", teams, organizations });
+      await loggedIn.register(organizationRoutes, { prefix: "/api", organizations, teams });
       // Across all your teams, so it doesn't use the X-Team-Id header.
       await loggedIn.register(myWorkRoutes, { prefix: "/api", db, teams });
 

@@ -33,7 +33,9 @@ export function SignupForm() {
       // Joined a team through the invite? Open that team first.
       const joined = me.teams.find((team) => !team.personal);
       if (joined) rememberTeam(joined.id);
-      router.replace(next);
+      // Joined an organization (but no team yet)? Show it, so they see what they joined.
+      const joinedOrganization = !joined && me.organizations.length > 0;
+      router.replace(joinedOrganization && next === "/tasks" ? "/organization" : next);
     } catch (failure) {
       setError((failure as Error).message);
       setBusy(false);

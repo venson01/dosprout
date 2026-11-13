@@ -1,4 +1,5 @@
 import type {
+  AcceptedInvite,
   Backup,
   CreateGoalInput,
   CreateTaskInput,
@@ -10,6 +11,10 @@ import type {
   Me,
   Member,
   MyWorkGroup,
+  OrganizationDetails,
+  OrganizationInvite,
+  OrganizationRole,
+  OrganizationSummary,
   Settings,
   SignupInput,
   StartTimerInput,
@@ -90,9 +95,17 @@ export const api = {
   logOut: () => request<void>("/auth/logout", { method: "POST" }),
 
   // ---- Teams ----
-  createTeam: (name: string) => request<TeamSummary>("/teams", { method: "POST", body: json({ name }) }),
+  /** organizationId: create it in one of your organizations (null / left out: on its own). */
+  createTeam: (name: string, organizationId: number | null = null) =>
+    request<TeamSummary>("/teams", { method: "POST", body: json({ name, organizationId }) }),
   renameTeam: (teamId: number, name: string) =>
     request<TeamSummary>(`/teams/${teamId}`, { method: "PATCH", body: json({ name }) }),
+  /** Moves a team into an organization, or out of it (null). */
+  moveTeam: (teamId: number, organizationId: number | null) =>
+    request<TeamSummary>(`/teams/${teamId}`, { method: "PATCH", body: json({ organizationId }) }),
+  /** In an organization's team: adds a colleague straight away. Returns the new member list. */
+  addTeamMember: (teamId: number, userId: number) =>
+    request<Member[]>(`/teams/${teamId}/members`, { method: "POST", body: json({ userId }) }),
   deleteTeam: (teamId: number) => request<void>(`/teams/${teamId}`, { method: "DELETE" }),
   listMembers: (teamId: number) => request<Member[]>(`/teams/${teamId}/members`),
   /** The owner removes someone, or you leave (your own user id). */
@@ -103,10 +116,33 @@ export const api = {
     request<Invite>(`/teams/${teamId}/invites`, { method: "POST", body: json({ email }) }),
   deleteInvite: (teamId: number, inviteId: number) =>
     request<void>(`/teams/${teamId}/invites/${inviteId}`, { method: "DELETE" }),
-  /** What an invite link is for (works without logging in). */
+  /** What an invite link is for: a team or an organization (works without logging in). */
   previewInvite: (token: string) => request<InvitePreview>(`/invites/${encodeURIComponent(token)}`),
   acceptInvite: (token: string) =>
-    request<TeamSummary>(`/invites/${encodeURIComponent(token)}/accept`, { method: "POST" }),
+    request<AcceptedInvite>(`/invites/${encodeURIComponent(token)}/accept`, { method: "POST" }),
+
+  // ---- Organizations ----
+  createOrganization: (name: string) =>
+    request<OrganizationSummary>("/organizations", { method: "POST", body: json({ name }) }),
+  /** Its teams (with open / overdue counts) and members (with their teams). */
+  getOrganization: (id: number) => request<OrganizationDetails>(`/organizations/${id}`),
+  renameOrganization: (id: number, name: string) =>
+    request<OrganizationSummary>(`/organizations/${id}`, { method: "PATCH", body: json({ name }) }),
+  /** Its teams are kept, on their own. */
+  deleteOrganization: (id: number) => request<void>(`/organizations/${id}`, { method: "DELETE" }),
+  setOrganizationRole: (id: number, userId: number, role: OrganizationRole) =>
+    request<void>(`/organizations/${id}/members/${userId}`, { method: "PATCH", body: json({ role }) }),
+  /** Out of the organization and all its teams (your own user id = leave). */
+  removeOrganizationMember: (id: number, userId: number) =>
+    request<void>(`/organizations/${id}/members/${userId}`, { method: "DELETE" }),
+  /** Admins: join one of the organization's teams. */
+  joinOrganizationTeam: (id: number, teamId: number) =>
+    request<TeamSummary>(`/organizations/${id}/teams/${teamId}/join`, { method: "POST" }),
+  listOrganizationInvites: (id: number) => request<OrganizationInvite[]>(`/organizations/${id}/invites`),
+  createOrganizationInvite: (id: number, email: string) =>
+    request<OrganizationInvite>(`/organizations/${id}/invites`, { method: "POST", body: json({ email }) }),
+  deleteOrganizationInvite: (id: number, inviteId: number) =>
+    request<void>(`/organizations/${id}/invites/${inviteId}`, { method: "DELETE" }),
 
   // ---- My work (all your teams at once) ----
   myWork: () => request<MyWorkGroup[]>("/my-work"),

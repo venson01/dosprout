@@ -4,7 +4,7 @@ import { Sprout } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { api, ApiError, setCurrentTeamId } from "@/lib/api";
-import type { Me, TeamSummary, User } from "@/lib/types";
+import type { Me, OrganizationSummary, TeamSummary, User } from "@/lib/types";
 
 /** Where the browser remembers which team you were looking at. */
 const TEAM_STORAGE_KEY = "dosprout-team";
@@ -41,6 +41,8 @@ interface Auth {
   user: User;
   /** Every team you're in (your personal team first). */
   teams: TeamSummary[];
+  /** The organizations you're in. */
+  organizations: OrganizationSummary[];
   /** The team the app is showing. Tasks, goals, calendar and time all come from it. */
   team: TeamSummary;
   switchTeam: (teamId: number) => void;
@@ -156,7 +158,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <AuthContext value={{ user: me.user, teams: me.teams, team, switchTeam, refresh, logOut }}>
+    <AuthContext
+      value={{ user: me.user, teams: me.teams, organizations: me.organizations, team, switchTeam, refresh, logOut }}
+    >
       {children}
     </AuthContext>
   );

@@ -408,8 +408,9 @@ function TaskDefaultsSection({ settings, save, onError }: SectionProps & { onErr
 /** Backup (download), restore (upload) and delete everything. */
 function DataSection({ onError, onDone }: { onError: (message: string) => void; onDone: () => void }) {
   const { team } = useAuth();
-  // Restoring and deleting change the data for everyone in a team, so only its owner may.
-  const owner = team.role === "owner";
+  // Restoring and deleting change the data for everyone in a team, so only its managers may
+  // (its owner, or an admin of its organization).
+  const owner = team.canManage;
   const space = team.personal ? "your personal space" : team.name;
   const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState<"export" | "import" | null>(null);
@@ -477,7 +478,7 @@ function DataSection({ onError, onDone }: { onError: (message: string) => void; 
           type="button"
           onClick={() => fileRef.current?.click()}
           disabled={busy !== null || !owner}
-          title={owner ? undefined : "Only the team's owner can restore a backup"}
+          title={owner ? undefined : "Only the team's owner (or an organization admin) can restore a backup"}
           className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-brand ring-1 ring-line hover:bg-brand-soft disabled:opacity-60"
         >
           <Upload className="size-4" />
@@ -497,7 +498,7 @@ function DataSection({ onError, onDone }: { onError: (message: string) => void; 
       </div>
       <p className="mt-2 text-xs text-muted">
         The backup is a .json file with everything in it. Restoring one replaces what&apos;s here.
-        {!owner && " Only the team's owner can restore a backup or delete the team's data."}
+        {!owner && " Only the team's owner (or an organization admin) can restore a backup or delete the team's data."}
       </p>
 
       {owner && (

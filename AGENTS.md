@@ -11,7 +11,7 @@ Humans should start with [README.md](README.md).
   add short comments that explain *why*, and explain your changes in plain language.
   Don't add new libraries unless they clearly pay for themselves, and say why when you do.
 - Pages: **Dashboard**, **My work** (all teams at once), **Tasks** (list + board), **Goals**, **Time**,
-  **Calendar**, **Team**, **Settings**,
+  **Calendar**, **Team**, **Organization**, **Settings**,
   plus **/login**, **/signup** and **/invite/[token]** (in the `app/(auth)` route group: no sidebar, no login needed).
   (The "Coming soon" placeholder route `app/[section]` was removed once every page existed.)
 - `/` is a **landing page** (no sidebar), designed in Figma ("DoSprout Landing Page"); its buttons
@@ -87,7 +87,9 @@ backend/src/
   passwords.ts       hashPassword / verifyPassword (scrypt), newToken, hashToken (sha256)
   account-store.ts   AccountStore: users + sessions; createUser (also makes the personal team,
                      hands old team-less data to the first user, or adds example data)
-  team-store.ts      TeamStore: teams, members, invites
+  team-store.ts      TeamStore: teams, members, invites (TEAM_SELECT works out canManage)
+  organization-store.ts  OrganizationStore: organizations, their members (admin / member),
+                     the teams overview (details), invites, removeMember (hands teams over)
   example-data.ts    exampleDataStatements(teamId, userId): the example tasks for a new account
   db.ts              connect() + openDatabase(): runs MIGRATIONS
   task-store.ts      TaskStore(db, teamId): all task SQL for ONE team (+ statusFromSubtasks, NOW...)
@@ -100,7 +102,8 @@ backend/src/
   routes/time.ts     time-entry HTTP routes + JSON-schema validation
   routes/settings.ts settings, /export, /import (with the backup's JSON schema), /data
   routes/auth.ts     /auth/signup, /auth/login, /auth/logout, /auth/me, /invites/:token (+ /accept)
-  routes/teams.ts    /teams, /teams/:id, members, invites (owner checks live here)
+  routes/teams.ts    /teams, /teams/:id, members, invites (canManage checks live here)
+  routes/organizations.ts  /organizations/... (admin checks live here)
   routes/my-work.ts  /my-work: your tasks in all teams (tasksForPerson + goalsForPerson)
   types.ts           API data types (source of truth)
   copy-tasks.ts      copyTasks(): copies every table (accounts, teams, tasks...) between two
@@ -111,7 +114,8 @@ frontend/
   next.config.ts     forwards /api to the backend while developing (not on Vercel)
 frontend/src/
   app/               page.tsx: / (the landing page), layout.tsx (theme script in <head>, no AppShell)
-  app/(app)/         the app pages: /dashboard, /my-work, /tasks, /goals, /time, /calendar, /team, /settings;
+  app/(app)/         the app pages: /dashboard, /my-work, /tasks, /goals, /time, /calendar, /team,
+                     /organization, /settings;
                      layout.tsx wraps them in AppShell
   app/(auth)/        /login, /signup, /invite/[token] (no sidebar, no login required)
                      icon.svg: the browser-tab icon (the sidebar's Sprout icon, lighter blue on
@@ -119,7 +123,11 @@ frontend/src/
   components/landing/ LandingPage (all sections of /, server components, no state) and AppPreview
                      (an HTML picture of the board, role="img")
   components/auth/   AuthCard (shared look), LoginForm, SignupForm, InviteView
-  components/team/   TeamView: members, invite links, create / rename / leave / delete a team
+  components/team/   TeamView: members, organization card (add colleagues, move team), invite
+                     links, create / rename / leave / delete a team. team-ui.tsx: Card, buttons,
+                     CopyLink, InviteManager (shared with the Organization page)
+  components/organization/ OrganizationView: numbers, all teams (open / join / create), member
+                     directory (roles, remove), invites, leave / delete, create an organization
   components/my-work/ MyWorkView: your tasks from every team, grouped by due date; team filter;
                      tick done; clicking a task switches to its team and opens /tasks?open=<id>
   components/layout/ AppShell (AuthProvider + TasksProvider keyed by team), Sidebar (Space
@@ -185,16 +193,25 @@ the `X-Team-Id` header (your personal team when it's missing; 404 if you're not 
 | POST   | `/auth/login`                        | `email`, `password`                               | `Me` + cookie; 401 if wrong |
 | POST   | `/auth/logout`                       |                                                   | 204, clears the cookie |
 | GET    | `/auth/me`                           |                                                   | `Me` (`user` + `teams`, personal first) |
-| POST   | `/teams`                             | `{ name }`                                        | `TeamSummary` (201), you're the owner |
-| PATCH  | `/teams/:id`                         | `{ name }` (owner, not personal)                   | `TeamSummary`    |
-| DELETE | `/teams/:id`                         | (owner, not personal) deletes ALL its data        | 204              |
+| POST   | `/teams`                             | `{ name, organizationId? }` (must be in that organization) | `TeamSummary` (201), you're the owner |
+| PATCH  | `/teams/:id`                         | `{ name?, organizationId? }` (manager, not personal; moving needs admin of both organizations) | `TeamSummary` |
+| DELETE | `/teams/:id`                         | (manager, not personal) deletes ALL its data      | 204              |
 | GET    | `/teams/:id/members`                 |                                                   | `Member[]`       |
-| DELETE | `/teams/:id/members/:userId`         | owner removes someone, or you leave (not the owner) | 204; their tasks become unassigned |
-| GET    | `/teams/:id/invites`                 | (owner)                                           | `Invite[]` (with tokens) |
-| POST   | `/teams/:id/invites`                 | `{ email }` (owner); replaces an old invite for that email | `Invite` (201); 409 if already a member |
-| DELETE | `/teams/:id/invites/:inviteId`       | (owner)                                           | 204              |
-| GET    | `/invites/:token`                    | (no login needed)                                 | `InvitePreview`; 404 if used / expired |
-| POST   | `/invites/:token/accept`             | (logged in as the invited email, else 403)        | `TeamSummary`    |
+| POST   | `/teams/:id/members`                 | `{ userId }` (manager; team in an organization; they're in it) | `Member[]` (201) |
+| DELETE | `/teams/:id/members/:userId`         | manager removes someone (not the owner), or you leave (not the owner) | 204; their tasks become unassigned |
+| GET    | `/teams/:id/invites`                 | (manager)                                         | `Invite[]` (with tokens) |
+| POST   | `/teams/:id/invites`                 | `{ email }` (manager); replaces an old invite for that email | `Invite` (201); 409 if already a member |
+| DELETE | `/teams/:id/invites/:inviteId`       | (manager)                                         | 204              |
+| GET    | `/invites/:token`                    | (no login needed) team OR organization invite     | `InvitePreview` (`kind`, `name`...); 404 if used / expired |
+| POST   | `/invites/:token/accept`             | (logged in as the invited email, else 403)        | `AcceptedInvite` (`{ kind, id }`) |
+| POST   | `/organizations`                     | `{ name }`                                        | `OrganizationSummary` (201), you're admin |
+| GET    | `/organizations/:id`                 | (member)                                          | `OrganizationDetails`: teams (counts, isMember) + members (teamIds) |
+| PATCH  | `/organizations/:id`                 | `{ name }` (admin)                                | `OrganizationSummary` |
+| DELETE | `/organizations/:id`                 | (admin) its teams carry on on their own           | 204              |
+| PATCH  | `/organizations/:id/members/:userId` | `{ role: "admin" \| "member" }` (admin; keeps one admin) | 204        |
+| DELETE | `/organizations/:id/members/:userId` | admin removes someone, or you leave (keeps one admin) | 204; out of all its teams |
+| POST   | `/organizations/:id/teams/:teamId/join` | (admin)                                        | `TeamSummary`    |
+| GET / POST / DELETE | `/organizations/:id/invites[/:inviteId]` | (admin) like team invites            | `OrganizationInvite` |
 | GET    | `/my-work`                           | (no X-Team-Id: all your teams)                    | `MyWorkGroup[]`: per team (personal first) its `tasks` on your plate and its `goals` |
 | GET    | `/tasks`                             |                                                   | `Task[]`         |
 | GET    | `/tasks/:id`                         |                                                   | `Task`           |
@@ -287,8 +304,24 @@ Data model:
   "Done in the last 7 days" list. It loads its own data (`api.myWork()`), changes tasks with
   `api.updateTaskInTeam(teamId, ...)` (the X-Team-Id of that task's team), and calls `reload()`
   when the task is in the current team. `/tasks?open=<id>` opens a task's editor (TasksView).
+- **Organizations** (optional) group teams: `teams.organization_id` (NULL = a team on its own;
+  personal teams never have one). Members are `admin` or `member` (`organization_members`).
+  - Joining: an organization invite link (admins), or joining any of its teams (accepting a team
+    invite, being added directly, or the team being moved in) also makes you a member.
+  - `TeamSummary.canManage` = team owner OR admin of its organization. Every "manage" check
+    (routes/teams.ts, `cannotManage` in auth.ts for import / delete-all, the frontend's buttons)
+    uses it; `role` is still the real team role (owners can't leave or be removed).
+  - Admins see every team on the Organization page (with open / overdue counts), can join any of
+    them, and remove people from the organization: that takes them out of all its teams,
+    unassigns their tasks there, and hands teams they owned to the remover (or, when someone
+    leaves by themself, to the longest-serving admin). There is always at least one admin.
+  - Team managers in an organization can add colleagues directly (`POST /teams/:id/members`).
+  - Deleting an organization keeps its teams (they become teams on their own).
+  - Invite links share `/invite/<token>` with team invites; `findInvite` (routes/auth.ts) looks in
+    both tables. `InvitePreview.kind` tells the page which it is.
 - Not built: password reset, email verification, changing your name / email / password,
-  transferring team ownership, login rate limiting.
+  transferring team ownership, login rate limiting, an organization-wide dashboard beyond the
+  Organization page's numbers.
 
 ## Notifications
 

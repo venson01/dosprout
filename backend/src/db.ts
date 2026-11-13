@@ -153,6 +153,37 @@ const MIGRATIONS: string[] = [
   CREATE INDEX time_entries_team_id ON time_entries(team_id);
   CREATE INDEX time_entries_user_id ON time_entries(user_id);
   `,
+
+  // Version 8: organizations. An organization groups teams (teams.organization_id, or NULL
+  // for a team on its own). Its members are "admin" or "member"; admins invite people with
+  // organization_invites links and can manage every team in it.
+  `
+  CREATE TABLE organizations (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    name       TEXT    NOT NULL,
+    created_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+  );
+  CREATE TABLE organization_members (
+    organization_id INTEGER NOT NULL,
+    user_id         INTEGER NOT NULL,
+    role            TEXT    NOT NULL DEFAULT 'member' CHECK (role IN ('admin', 'member')),
+    joined_at       TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    PRIMARY KEY (organization_id, user_id)
+  );
+  CREATE INDEX organization_members_user_id ON organization_members(user_id);
+  CREATE TABLE organization_invites (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    organization_id INTEGER NOT NULL,
+    email           TEXT    NOT NULL,
+    token           TEXT    NOT NULL UNIQUE,
+    invited_by      INTEGER NOT NULL,
+    created_at      TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    expires_at      TEXT    NOT NULL
+  );
+  CREATE INDEX organization_invites_organization_id ON organization_invites(organization_id);
+  ALTER TABLE teams ADD COLUMN organization_id INTEGER;
+  CREATE INDEX teams_organization_id ON teams(organization_id);
+  `,
 ];
 
 export interface OpenDatabaseOptions {

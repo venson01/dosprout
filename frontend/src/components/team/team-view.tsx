@@ -1,30 +1,21 @@
 "use client";
 
-import { Check, Copy, Crown, LogOut, Mail, Pencil, Plus, Trash, Users, X } from "lucide-react";
+import { Building2, Crown, LogOut, Pencil, Plus, Trash, UserPlus, Users, X } from "lucide-react";
+import Link from "next/link";
 import { useCallback, useEffect, useId, useState } from "react";
 import { Avatar } from "@/components/layout/avatar";
 import { ErrorToast } from "@/components/tasks/feedback";
 import { useAuth } from "@/hooks/auth-context";
 import { useTaskList } from "@/hooks/tasks-context";
 import { api } from "@/lib/api";
-import { formatDateTime } from "@/lib/task-helpers";
-import type { Invite, Member, TeamSummary } from "@/lib/types";
-
-const inputClass =
-  "w-full min-w-0 rounded-lg border border-line bg-surface px-3 py-2 text-sm outline-none placeholder:text-muted focus:border-brand focus:ring-2 focus:ring-brand/20";
-const brandButton =
-  "inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-brand-hover disabled:opacity-60";
-const quietButton =
-  "inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium text-brand ring-1 ring-line hover:bg-brand-soft disabled:opacity-60";
-
-/** The address an invite link opens. Only called in the browser (invites load after the page does). */
-function inviteLink(invite: Invite): string {
-  return `${window.location.origin}/invite/${invite.token}`;
-}
+import type { Member, OrganizationMember, TeamSummary } from "@/lib/types";
+import { brandButton, Card, dangerButton, InviteManager, inputClass, quietButton } from "./team-ui";
 
 /**
  * The Team page. In your personal space: what teams are, and a form to create one.
- * In a team: its members, invites (owner only), and leaving / deleting it.
+ * In a team: its members, its organization, invites, and leaving / deleting it.
+ * "Manage" buttons show when team.canManage: you own the team, or you're an admin of
+ * its organization.
  */
 export function TeamView() {
   const { team } = useAuth();
@@ -40,19 +31,9 @@ export function TeamView() {
   );
 }
 
-function Card({ title, description, children, id }: { title: string; description?: string; children: React.ReactNode; id?: string }) {
-  return (
-    <section id={id} className="scroll-mt-24 rounded-xl border border-line bg-surface p-4 sm:p-5">
-      <h2 className="font-semibold">{title}</h2>
-      {description && <p className="mt-0.5 text-sm text-muted">{description}</p>}
-      <div className="mt-4">{children}</div>
-    </section>
-  );
-}
-
 /** Shown in your personal space: explains teams and lists the ones you're in. */
 function PersonalIntro() {
-  const { teams, switchTeam } = useAuth();
+  const { teams, organizations, switchTeam } = useAuth();
   const others = teams.filter((t) => !t.personal);
 
   return (
@@ -70,20 +51,26 @@ function PersonalIntro() {
           <p className="text-sm text-muted">You&apos;re not in any team yet. Create one below, or ask someone to invite you.</p>
         ) : (
           <ul className="divide-y divide-line">
-            {others.map((t) => (
-              <li key={t.id} className="flex items-center gap-3 py-2.5">
-                <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-brand-soft text-brand">
-                  <Users className="size-4" aria-hidden />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium">{t.name}</p>
-                  <p className="text-xs text-muted">{t.role === "owner" ? "You own this team" : "Member"}</p>
-                </div>
-                <button type="button" onClick={() => switchTeam(t.id)} className={quietButton}>
-                  Open<span className="sr-only"> {t.name}</span>
-                </button>
-              </li>
-            ))}
+            {others.map((t) => {
+              const organization = organizations.find((o) => o.id === t.organizationId);
+              return (
+                <li key={t.id} className="flex items-center gap-3 py-2.5">
+                  <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-brand-soft text-brand">
+                    <Users className="size-4" aria-hidden />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium">{t.name}</p>
+                    <p className="truncate text-xs text-muted">
+                      {t.role === "owner" ? "You own this team" : "Member"}
+                      {organization && ` · ${organization.name}`}
+                    </p>
+                  </div>
+                  <button type="button" onClick={() => switchTeam(t.id)} className={quietButton}>
+                    Open<span className="sr-only"> {t.name}</span>
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         )}
       </Card>
@@ -91,16 +78,16 @@ function PersonalIntro() {
   );
 }
 
-/** A team's name, members, invites and the leave / delete buttons. */
+/** A team's name, members, organization, invites and the leave / delete buttons. */
 function TeamDetails({ team, onError }: { team: TeamSummary; onError: (message: string) => void }) {
   const { members } = useTaskList();
-  const owner = team.role === "owner";
 
   return (
     <>
       <TeamHeader team={team} memberCount={members.length} onError={onError} />
       <MembersCard team={team} onError={onError} />
-      {owner && <InvitesCard team={team} onError={onError} />}
+      <OrganizationCard team={team} onError={onError} />
+      {team.canManage && <InvitesCard team={team} onError={onError} />}
       <DangerZone team={team} onError={onError} />
     </>
   );
@@ -164,7 +151,7 @@ function TeamHeader({ team, memberCount, onError }: { team: TeamSummary; memberC
           with the whole team. Tracked time stays your own.
         </p>
       </div>
-      {team.role === "owner" && (
+      {team.canManage && (
         <button type="button" onClick={() => setEditing(true)} className={quietButton}>
           <Pencil className="size-4" aria-hidden />
           Rename
@@ -177,7 +164,6 @@ function TeamHeader({ team, memberCount, onError }: { team: TeamSummary; memberC
 function MembersCard({ team, onError }: { team: TeamSummary; onError: (message: string) => void }) {
   const { user } = useAuth();
   const { members, reloadMembers, loadState } = useTaskList();
-  const owner = team.role === "owner";
 
   async function remove(member: Member) {
     if (!window.confirm(`Remove ${member.name} from ${team.name}? Tasks assigned to them become unassigned.`)) return;
@@ -213,7 +199,9 @@ function MembersCard({ team, onError }: { team: TeamSummary; onError: (message: 
                   Owner
                 </span>
               ) : (
-                owner && (
+                // You leave with the "Leave team" button below, not here.
+                team.canManage &&
+                member.id !== user.id && (
                   <button
                     type="button"
                     onClick={() => remove(member)}
@@ -232,153 +220,176 @@ function MembersCard({ team, onError }: { team: TeamSummary; onError: (message: 
   );
 }
 
-/** Owner only: invite someone by email, and see / copy / cancel invites that are waiting. */
-function InvitesCard({ team, onError }: { team: TeamSummary; onError: (message: string) => void }) {
-  const [invites, setInvites] = useState<Invite[]>([]);
-  const [email, setEmail] = useState("");
-  const [sending, setSending] = useState(false);
-  // The invite just made, so its link can be shown right away.
-  const [fresh, setFresh] = useState<Invite | null>(null);
-  const id = useId();
+/**
+ * Which organization the team belongs to. Managers of a team in an organization can add
+ * colleagues straight away; admins can move the team into (or out of) an organization.
+ */
+function OrganizationCard({ team, onError }: { team: TeamSummary; onError: (message: string) => void }) {
+  const { organizations, refresh } = useAuth();
+  const { members, reloadMembers } = useTaskList();
+  const current = organizations.find((o) => o.id === team.organizationId);
+  // Moving needs admin rights in the organization it leaves AND the one it joins.
+  const mayLeaveCurrent = team.organizationId === null || current?.role === "admin";
+  const destinations = mayLeaveCurrent ? organizations.filter((o) => o.role === "admin" && o.id !== team.organizationId) : [];
+  const canMove = team.canManage && mayLeaveCurrent && (destinations.length > 0 || team.organizationId !== null);
+  const canAddColleagues = team.canManage && team.organizationId !== null;
 
+  const [colleagues, setColleagues] = useState<OrganizationMember[]>([]);
+  const [colleagueId, setColleagueId] = useState("");
+  const [destination, setDestination] = useState("");
+  const [busy, setBusy] = useState(false);
+  const ids = useId();
+
+  // The organization's members, to pick colleagues from.
   useEffect(() => {
+    if (!canAddColleagues || team.organizationId === null) return;
     let cancelled = false;
-    api.listInvites(team.id).then(
-      (list) => {
-        if (!cancelled) setInvites(list);
+    api.getOrganization(team.organizationId).then(
+      (details) => {
+        if (!cancelled) setColleagues(details.members);
       },
-      (error: Error) => onError(`Couldn't load the invites: ${error.message}`),
+      (error: Error) => onError(`Couldn't load the organization's members: ${error.message}`),
     );
     return () => {
       cancelled = true;
     };
-  }, [team.id, onError]);
+  }, [canAddColleagues, team.organizationId, onError]);
 
-  async function send(event: React.FormEvent) {
+  // Only people who aren't in the team yet.
+  const addable = colleagues.filter((c) => !members.some((m) => m.id === c.id));
+
+  async function addColleague(event: React.FormEvent) {
     event.preventDefault();
-    setSending(true);
+    if (!colleagueId) return;
+    setBusy(true);
     try {
-      const invite = await api.createInvite(team.id, email);
-      // Inviting the same address again replaces the old invite.
-      setInvites((list) => [invite, ...list.filter((i) => i.email !== invite.email)]);
-      setFresh(invite);
-      setEmail("");
+      await api.addTeamMember(team.id, Number(colleagueId));
+      await reloadMembers();
+      setColleagueId("");
     } catch (error) {
-      onError(`Couldn't create the invite: ${(error as Error).message}`);
+      onError(`Couldn't add them: ${(error as Error).message}`);
     } finally {
-      setSending(false);
+      setBusy(false);
     }
   }
 
-  async function cancel(invite: Invite) {
+  async function move(event: React.FormEvent) {
+    event.preventDefault();
+    if (!destination) return;
+    const target = destination === "none" ? null : organizations.find((o) => o.id === Number(destination));
+    const question =
+      target === null
+        ? `Take ${team.name} out of ${current?.name}? It carries on as a team on its own.`
+        : `Move ${team.name} into ${target?.name}? Everyone in the team becomes a member of ${target?.name}.`;
+    if (!window.confirm(question)) return;
+    setBusy(true);
     try {
-      await api.deleteInvite(team.id, invite.id);
-      setInvites((list) => list.filter((i) => i.id !== invite.id));
-      if (fresh?.id === invite.id) setFresh(null);
+      await api.moveTeam(team.id, target === null ? null : target!.id);
+      setDestination("");
+      await refresh();
     } catch (error) {
-      onError(`Couldn't cancel the invite: ${(error as Error).message}`);
+      onError(`Couldn't move the team: ${(error as Error).message}`);
+    } finally {
+      setBusy(false);
     }
   }
+
+  if (!current && !canMove) return null;
 
   return (
     <Card
-      title="Invite people"
-      description="DoSprout makes a link for each person. Send it to them yourself (email, WhatsApp, Slack...). It works once, for 7 days, and only for that email address."
+      title="Organization"
+      description={current ? `This team is part of ${current.name}.` : "This team is on its own, not part of an organization."}
     >
-      <form onSubmit={send} className="flex flex-col gap-2 sm:flex-row">
-        <label htmlFor={id} className="sr-only">
-          Email address to invite
-        </label>
-        <input
-          id={id}
-          type="email"
-          required
-          maxLength={254}
-          placeholder="name@example.com"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          className={`${inputClass} sm:flex-1`}
-        />
-        <button type="submit" disabled={sending} className={brandButton}>
-          <Mail className="size-4" aria-hidden />
-          {sending ? "Creating link..." : "Create invite link"}
-        </button>
-      </form>
+      <div className="space-y-4">
+        {current && (
+          <Link href="/organization" className={quietButton}>
+            <Building2 className="size-4" aria-hidden />
+            Open {current.name}
+          </Link>
+        )}
 
-      {fresh && (
-        <div className="mt-4 rounded-lg bg-brand-soft p-3">
-          <p className="text-sm font-medium text-brand">Invite link for {fresh.email}. Copy it and send it to them:</p>
-          <CopyLink link={inviteLink(fresh)} />
-        </div>
-      )}
-
-      {invites.length > 0 && (
-        <>
-          <h3 className="mt-5 text-sm font-medium">Waiting to join</h3>
-          <ul className="mt-1 divide-y divide-line">
-            {invites.map((invite) => (
-              <li key={invite.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2.5">
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm">{invite.email}</p>
-                  <p className="text-xs text-muted">Link works until {formatDateTime(invite.expiresAt)}</p>
-                </div>
-                <CopyButton text={inviteLink(invite)} label={`Copy the invite link for ${invite.email}`} />
-                <button
-                  type="button"
-                  onClick={() => cancel(invite)}
-                  aria-label={`Cancel the invite for ${invite.email}`}
-                  className="rounded-md p-1.5 text-muted hover:bg-high-bg hover:text-high"
+        {canAddColleagues && (
+          <form onSubmit={addColleague}>
+            <label htmlFor={`${ids}-colleague`} className="mb-1 block text-sm font-medium">
+              Add someone from {current?.name ?? "the organization"} (no invite needed)
+            </label>
+            {addable.length === 0 ? (
+              <p className="text-sm text-muted">Everyone in the organization is already in this team.</p>
+            ) : (
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <select
+                  id={`${ids}-colleague`}
+                  value={colleagueId}
+                  onChange={(e) => setColleagueId(e.target.value)}
+                  className={`${inputClass} sm:flex-1`}
                 >
-                  <Trash className="size-4" />
+                  <option value="">Pick a colleague...</option>
+                  {addable.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name} ({c.email})
+                    </option>
+                  ))}
+                </select>
+                <button type="submit" disabled={busy || !colleagueId} className={brandButton}>
+                  <UserPlus className="size-4" aria-hidden />
+                  Add to team
                 </button>
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
+              </div>
+            )}
+          </form>
+        )}
+
+        {canMove && (
+          <form onSubmit={move}>
+            <label htmlFor={`${ids}-move`} className="mb-1 block text-sm font-medium">
+              {current ? "Move this team" : "Move this team into an organization"}
+            </label>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <select
+                id={`${ids}-move`}
+                value={destination}
+                onChange={(e) => setDestination(e.target.value)}
+                className={`${inputClass} sm:flex-1`}
+              >
+                <option value="">Pick where...</option>
+                {destinations.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.name}
+                  </option>
+                ))}
+                {current && <option value="none">Out of {current.name} (on its own)</option>}
+              </select>
+              <button type="submit" disabled={busy || !destination} className={quietButton}>
+                Move team
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
     </Card>
   );
 }
 
-/** The link in a box you can select, plus a Copy button. */
-function CopyLink({ link }: { link: string }) {
+/** Managers only: invite someone by email, and see / copy / cancel invites that are waiting. */
+function InvitesCard({ team, onError }: { team: TeamSummary; onError: (message: string) => void }) {
   return (
-    <div className="mt-2 flex gap-2">
-      <input
-        readOnly
-        value={link}
-        aria-label="Invite link"
-        onFocus={(e) => e.target.select()}
-        className={`${inputClass} flex-1 font-mono text-xs`}
-      />
-      <CopyButton text={link} label="Copy the invite link" />
-    </div>
+    <InviteManager
+      description={`DoSprout makes a link for each person. Send it to them yourself (email, WhatsApp, Slack...). It works once, for 7 days, and only for that email address.${
+        team.organizationId !== null ? " Joining this team also makes them a member of its organization." : ""
+      }`}
+      load={() => api.listInvites(team.id)}
+      create={(email) => api.createInvite(team.id, email)}
+      cancel={(inviteId) => api.deleteInvite(team.id, inviteId)}
+      onError={onError}
+    />
   );
 }
 
-function CopyButton({ text, label }: { text: string; label: string }) {
-  const [copied, setCopied] = useState(false);
-
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // Some browsers block the clipboard; the link is still there to select and copy.
-      window.prompt("Copy this link:", text);
-    }
-  }
-
-  return (
-    <button type="button" onClick={copy} aria-label={label} className={quietButton}>
-      {copied ? <Check className="size-4" aria-hidden /> : <Copy className="size-4" aria-hidden />}
-      <span aria-live="polite">{copied ? "Copied" : "Copy"}</span>
-    </button>
-  );
-}
-
-/** Owners can delete the team; members can leave it. */
+/**
+ * Leaving (anyone but the owner) and deleting (managers). An organization admin who joined
+ * the team sees both.
+ */
 function DangerZone({ team, onError }: { team: TeamSummary; onError: (message: string) => void }) {
   const { user, refresh } = useAuth();
   const [typed, setTyped] = useState("");
@@ -410,61 +421,63 @@ function DangerZone({ team, onError }: { team: TeamSummary; onError: (message: s
     }
   }
 
-  if (team.role !== "owner") {
-    return (
-      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-line bg-surface px-4 py-3 sm:px-5">
-        <p className="min-w-0 flex-1 text-sm text-muted">Leaving removes you from the team. Your tasks there stay with the team.</p>
-        <button type="button" onClick={leave} disabled={busy} className={quietButton}>
-          <LogOut className="size-4" aria-hidden />
-          Leave team
-        </button>
-      </div>
-    );
-  }
-
   return (
-    <form onSubmit={remove} className="rounded-xl border border-high/40 bg-high-bg px-4 py-3 sm:px-5">
-      <p className="text-sm font-medium text-high">Delete this team</p>
-      <p className="text-xs text-muted">
-        Deletes the team with all its tasks, goals and tracked time, for everyone. It can&apos;t be undone (download a
-        backup in Settings first if you might want them back).
-      </p>
-      <label htmlFor={id} className="mt-3 block text-sm">
-        Type <span className="font-medium">{team.name}</span> to confirm
-      </label>
-      <div className="mt-1 flex flex-col gap-2 sm:flex-row">
-        <input
-          id={id}
-          value={typed}
-          onChange={(e) => setTyped(e.target.value)}
-          autoComplete="off"
-          className={`${inputClass} sm:flex-1`}
-        />
-        <button
-          type="submit"
-          disabled={typed !== team.name || busy}
-          className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-high px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
-        >
-          <Trash className="size-4" aria-hidden />
-          {busy ? "Deleting..." : "Delete team"}
-        </button>
-      </div>
-    </form>
+    <>
+      {team.role !== "owner" && (
+        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-line bg-surface px-4 py-3 sm:px-5">
+          <p className="min-w-0 flex-1 text-sm text-muted">
+            Leaving removes you from the team. Your tasks there stay with the team.
+          </p>
+          <button type="button" onClick={leave} disabled={busy} className={quietButton}>
+            <LogOut className="size-4" aria-hidden />
+            Leave team
+          </button>
+        </div>
+      )}
+
+      {team.canManage && (
+        <form onSubmit={remove} className="rounded-xl border border-high/40 bg-high-bg px-4 py-3 sm:px-5">
+          <p className="text-sm font-medium text-high">Delete this team</p>
+          <p className="text-xs text-muted">
+            Deletes the team with all its tasks, goals and tracked time, for everyone. It can&apos;t be undone
+            (download a backup in Settings first if you might want them back).
+          </p>
+          <label htmlFor={id} className="mt-3 block text-sm">
+            Type <span className="font-medium">{team.name}</span> to confirm
+          </label>
+          <div className="mt-1 flex flex-col gap-2 sm:flex-row">
+            <input
+              id={id}
+              value={typed}
+              onChange={(e) => setTyped(e.target.value)}
+              autoComplete="off"
+              className={`${inputClass} sm:flex-1`}
+            />
+            <button type="submit" disabled={typed !== team.name || busy} className={dangerButton}>
+              <Trash className="size-4" aria-hidden />
+              {busy ? "Deleting..." : "Delete team"}
+            </button>
+          </div>
+        </form>
+      )}
+    </>
   );
 }
 
-/** Anyone can create a team; they become its owner and it opens right away. */
+/** Anyone can create a team (on its own or in one of their organizations); it opens right away. */
 function CreateTeam({ onError }: { onError: (message: string) => void }) {
-  const { refresh } = useAuth();
+  const { team: currentTeam, organizations, refresh } = useAuth();
   const [name, setName] = useState("");
+  // Starts with the current team's organization (handy when adding teams to a company).
+  const [organizationId, setOrganizationId] = useState(currentTeam.organizationId ? String(currentTeam.organizationId) : "");
   const [busy, setBusy] = useState(false);
-  const id = useId();
+  const ids = useId();
 
   async function create(event: React.FormEvent) {
     event.preventDefault();
     setBusy(true);
     try {
-      const team = await api.createTeam(name);
+      const team = await api.createTeam(name, organizationId ? Number(organizationId) : null);
       setName("");
       await refresh(team.id);
     } catch (error) {
@@ -476,12 +489,12 @@ function CreateTeam({ onError }: { onError: (message: string) => void }) {
 
   return (
     <Card id="new-team" title="Create a team" description="You'll be its owner. Then invite people from this page.">
-      <form onSubmit={create} className="flex flex-col gap-2 sm:flex-row">
-        <label htmlFor={id} className="sr-only">
+      <form onSubmit={create} className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+        <label htmlFor={`${ids}-name`} className="sr-only">
           Team name
         </label>
         <input
-          id={id}
+          id={`${ids}-name`}
           required
           maxLength={60}
           placeholder="e.g. Marketing, Family, Study group"
@@ -489,6 +502,26 @@ function CreateTeam({ onError }: { onError: (message: string) => void }) {
           onChange={(e) => setName(e.target.value)}
           className={`${inputClass} sm:flex-1`}
         />
+        {organizations.length > 0 && (
+          <>
+            <label htmlFor={`${ids}-organization`} className="sr-only">
+              Organization
+            </label>
+            <select
+              id={`${ids}-organization`}
+              value={organizationId}
+              onChange={(e) => setOrganizationId(e.target.value)}
+              className={`${inputClass} sm:w-auto sm:max-w-56`}
+            >
+              <option value="">No organization</option>
+              {organizations.map((o) => (
+                <option key={o.id} value={o.id}>
+                  In {o.name}
+                </option>
+              ))}
+            </select>
+          </>
+        )}
         <button type="submit" disabled={busy} className={brandButton}>
           <Plus className="size-4" aria-hidden />
           {busy ? "Creating..." : "Create team"}

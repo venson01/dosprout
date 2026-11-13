@@ -11,7 +11,10 @@ interface TeamRow {
   id: number;
   name: string;
   personal: number;
+  organization_id: number | null;
   role: TeamRole;
+  // 1 = you may manage the team. (NULL counts as no: SQL gives NULL when one side is unknown.)
+  can_manage: number | null;
 }
 
 interface MemberRow {
@@ -34,8 +37,26 @@ interface InviteRow {
 }
 
 function toTeam(row: TeamRow): TeamSummary {
-  return { id: row.id, name: row.name, personal: row.personal === 1, role: row.role };
+  return {
+    id: row.id,
+    name: row.name,
+    personal: row.personal === 1,
+    role: row.role,
+    canManage: Number(row.can_manage) === 1,
+    organizationId: row.organization_id,
+  };
 }
+
+// A team as one member sees it. You may manage it when you own it, or when you're an
+// admin of the organization it belongs to (the LEFT JOIN finds that, if there is one).
+const TEAM_SELECT = `
+  SELECT teams.id, teams.name, teams.personal, teams.organization_id, team_members.role,
+         (team_members.role = 'owner' OR organization_members.role = 'admin') AS can_manage
+  FROM team_members
+  JOIN teams ON teams.id = team_members.team_id
+  LEFT JOIN organization_members
+    ON organization_members.organization_id = teams.organization_id
+   AND organization_members.user_id = team_members.user_id`;
 
 function toMember(row: MemberRow): Member {
   return { id: row.id, name: row.name, email: row.email, role: row.role, joinedAt: row.joined_at };
@@ -70,8 +91,7 @@ export class TeamStore {
   /** The teams a user belongs to: their personal team first, then the others by name. */
   async teamsFor(userId: number): Promise<TeamSummary[]> {
     const { rows } = await this.db.execute({
-      sql: `SELECT teams.id, teams.name, teams.personal, team_members.role
-            FROM team_members JOIN teams ON teams.id = team_members.team_id
+      sql: `${TEAM_SELECT}
             WHERE team_members.user_id = ?
             ORDER BY teams.personal DESC, teams.name COLLATE NOCASE, teams.id`,
       args: [userId],
@@ -82,9 +102,7 @@ export class TeamStore {
   /** The team as this user sees it, or undefined if they aren't in it. */
   async membership(teamId: number, userId: number): Promise<TeamSummary | undefined> {
     const { rows } = await this.db.execute({
-      sql: `SELECT teams.id, teams.name, teams.personal, team_members.role
-            FROM team_members JOIN teams ON teams.id = team_members.team_id
-            WHERE team_members.team_id = ? AND team_members.user_id = ?`,
+      sql: `${TEAM_SELECT} WHERE team_members.team_id = ? AND team_members.user_id = ?`,
       args: [teamId, userId],
     });
     const row = rows[0] as unknown as TeamRow | undefined;
@@ -97,11 +115,14 @@ export class TeamStore {
     return teams.find((team) => team.personal)!;
   }
 
-  /** Creates a team with this user as its owner. */
-  async create(name: string, ownerId: number): Promise<TeamSummary> {
+  /** Creates a team with this user as its owner, on its own or in an organization. */
+  async create(name: string, ownerId: number, organizationId: number | null = null): Promise<TeamSummary> {
     const [team] = await this.db.batch(
       [
-        { sql: "INSERT INTO teams (name, personal) VALUES (?, 0)", args: [name.trim()] },
+        {
+          sql: "INSERT INTO teams (name, personal, organization_id) VALUES (?, 0, ?)",
+          args: [name.trim(), organizationId],
+        },
         // last_insert_rowid() is the id of the team inserted just above.
         { sql: "INSERT INTO team_members (team_id, user_id, role) VALUES (last_insert_rowid(), ?, 'owner')", args: [ownerId] },
       ],
@@ -112,6 +133,33 @@ export class TeamStore {
 
   async rename(teamId: number, name: string): Promise<void> {
     await this.db.execute({ sql: "UPDATE teams SET name = ? WHERE id = ?", args: [name.trim(), teamId] });
+  }
+
+  /**
+   * Moves a team into an organization (or out of it, with null). Everyone in the team
+   * becomes a member of the new organization, because an organization's teams only have
+   * organization members in them.
+   */
+  async setOrganization(teamId: number, organizationId: number | null): Promise<void> {
+    const statements: InStatement[] = [
+      { sql: "UPDATE teams SET organization_id = ? WHERE id = ?", args: [organizationId, teamId] },
+    ];
+    if (organizationId !== null) {
+      statements.push({
+        sql: `INSERT OR IGNORE INTO organization_members (organization_id, user_id, role)
+              SELECT ?, user_id, 'member' FROM team_members WHERE team_id = ?`,
+        args: [organizationId, teamId],
+      });
+    }
+    await this.db.batch(statements, "write");
+  }
+
+  /** Adds someone to a team as a member (if they aren't in it already). */
+  async addMember(teamId: number, userId: number): Promise<void> {
+    await this.db.execute({
+      sql: "INSERT OR IGNORE INTO team_members (team_id, user_id, role) VALUES (?, ?, 'member')",
+      args: [teamId, userId],
+    });
   }
 
   /** Deletes a team and everything in it (tasks, subtasks, goals, time, members, invites). */
@@ -197,7 +245,13 @@ export class TeamStore {
     if (!row) return undefined;
     return {
       invite: toInvite(row),
-      preview: { teamName: row.team_name, email: row.email, invitedBy: row.invited_by_name, expiresAt: row.expires_at },
+      preview: {
+        kind: "team",
+        name: row.team_name,
+        email: row.email,
+        invitedBy: row.invited_by_name,
+        expiresAt: row.expires_at,
+      },
     };
   }
 
@@ -210,7 +264,10 @@ export class TeamStore {
     return rowsAffected > 0;
   }
 
-  /** Adds the user to the invite's team as a member, and uses up the invite. */
+  /**
+   * Adds the user to the invite's team as a member, and uses up the invite. If the team is
+   * in an organization, they join the organization too.
+   */
   async acceptInvite(invite: Invite, userId: number): Promise<TeamSummary> {
     await this.db.batch(
       [
@@ -218,6 +275,11 @@ export class TeamStore {
         {
           sql: "INSERT OR IGNORE INTO team_members (team_id, user_id, role) VALUES (?, ?, 'member')",
           args: [invite.teamId, userId],
+        },
+        {
+          sql: `INSERT OR IGNORE INTO organization_members (organization_id, user_id, role)
+                SELECT organization_id, ?, 'member' FROM teams WHERE id = ? AND organization_id IS NOT NULL`,
+          args: [userId, invite.teamId],
         },
         { sql: "DELETE FROM invites WHERE id = ?", args: [invite.id] },
       ],

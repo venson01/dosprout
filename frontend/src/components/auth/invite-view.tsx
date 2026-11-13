@@ -1,6 +1,6 @@
 "use client";
 
-import { Users } from "lucide-react";
+import { Building2, Users } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -50,9 +50,13 @@ export function InviteView({ token }: { token: string }) {
     setBusy(true);
     setError(null);
     try {
-      const team = await api.acceptInvite(token);
-      rememberTeam(team.id);
-      router.replace("/tasks");
+      const joined = await api.acceptInvite(token);
+      if (joined.kind === "team") {
+        rememberTeam(joined.id);
+        router.replace("/tasks");
+      } else {
+        router.replace("/organization");
+      }
     } catch (failure) {
       setError((failure as Error).message);
       setBusy(false);
@@ -87,19 +91,26 @@ export function InviteView({ token }: { token: string }) {
 
   const { invite, me } = state;
   const here = `/invite/${encodeURIComponent(token)}`;
+  const organization = invite.kind === "organization";
+  const Icon = organization ? Building2 : Users;
   const subtitle = (
     <>
       <strong className="font-medium text-ink">{invite.invitedBy}</strong> invited{" "}
-      <strong className="font-medium text-ink">{invite.email}</strong> to work together on DoSprout: shared
-      tasks, goals and a calendar.
+      <strong className="font-medium text-ink">{invite.email}</strong>{" "}
+      {organization
+        ? "to join their organization on DoSprout. Its admins can then add you to its teams."
+        : "to work together on DoSprout: shared tasks, goals and a calendar."}
     </>
   );
 
   return (
-    <AuthCard title={`Join ${invite.teamName}`} subtitle={subtitle}>
+    <AuthCard title={`Join ${invite.name}`} subtitle={subtitle}>
       <div className="mb-6 flex items-center gap-3 rounded-xl bg-brand-soft p-4 text-brand">
-        <Users className="size-6 shrink-0" aria-hidden />
-        <p className="font-medium">{invite.teamName}</p>
+        <Icon className="size-6 shrink-0" aria-hidden />
+        <p className="font-medium">
+          {invite.name}
+          {organization && <span className="block text-xs font-normal">Organization</span>}
+        </p>
       </div>
 
       {me === null && (
@@ -120,7 +131,7 @@ export function InviteView({ token }: { token: string }) {
         <div className="space-y-3">
           <FormError message={error} />
           <button type="button" onClick={join} disabled={busy} className={primaryButton}>
-            {busy ? "Joining..." : `Join ${invite.teamName}`}
+            {busy ? "Joining..." : `Join ${invite.name}`}
           </button>
         </div>
       )}
@@ -130,7 +141,8 @@ export function InviteView({ token }: { token: string }) {
           <p className="text-sm text-muted">
             You&apos;re logged in as <strong className="font-medium text-ink">{me.user.email}</strong>, but this
             invite is for <strong className="font-medium text-ink">{invite.email}</strong>. Log out, then sign up
-            or log in with that address. (Or ask the team owner to invite {me.user.email} instead.)
+            or log in with that address. (Or ask {organization ? "an admin" : "the team owner"} to invite{" "}
+            {me.user.email} instead.)
           </p>
           <button type="button" onClick={logOutAndStay} className={primaryButton}>
             Log out

@@ -2,6 +2,7 @@
 
 import {
   AlarmClock,
+  Building2,
   CalendarDays,
   ChartColumn,
   CircleCheck,
@@ -34,6 +35,7 @@ const MAIN_NAV: NavItem[] = [
   { href: "/time", label: "Time", icon: AlarmClock },
   { href: "/calendar", label: "Calendar", icon: CalendarDays },
   { href: "/team", label: "Team", icon: Users },
+  { href: "/organization", label: "Organization", icon: Building2 },
 ];
 
 interface SidebarProps {
@@ -132,9 +134,17 @@ const NEW_TEAM = "new";
 /**
  * Picks which team the app shows: your personal space or one of your teams.
  * A plain <select>, so it works with the keyboard and screen readers out of the box.
+ * Teams in an organization are grouped under its name (<optgroup>).
  */
 function TeamSwitcher({ onSwitch }: { onSwitch: () => void }) {
-  const { teams, team, switchTeam } = useAuth();
+  const { teams, organizations, team, switchTeam } = useAuth();
+  const personal = teams.filter((t) => t.personal);
+  const onTheirOwn = teams.filter((t) => !t.personal && t.organizationId === null);
+  const option = (t: (typeof teams)[number]) => (
+    <option key={t.id} value={t.id}>
+      {t.personal ? "Personal (just you)" : t.name}
+    </option>
+  );
   const router = useRouter();
   const id = useId();
 
@@ -159,11 +169,18 @@ function TeamSwitcher({ onSwitch }: { onSwitch: () => void }) {
         // The options get normal page colors: on some systems the list is drawn white.
         className="w-full rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-sm text-white outline-none focus:border-brand focus:ring-2 focus:ring-brand/40 [&_option]:bg-surface [&_option]:text-ink"
       >
-        {teams.map((option) => (
-          <option key={option.id} value={option.id}>
-            {option.personal ? "Personal (just you)" : option.name}
-          </option>
-        ))}
+        {personal.map(option)}
+        {onTheirOwn.length > 0 && <optgroup label="Teams">{onTheirOwn.map(option)}</optgroup>}
+        {organizations.map((organization) => {
+          const inIt = teams.filter((t) => t.organizationId === organization.id);
+          return (
+            inIt.length > 0 && (
+              <optgroup key={organization.id} label={organization.name}>
+                {inIt.map(option)}
+              </optgroup>
+            )
+          );
+        })}
         <option value={NEW_TEAM}>+ Create a team...</option>
       </select>
     </div>

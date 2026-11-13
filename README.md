@@ -41,6 +41,9 @@ deployed on Vercel). The design is based on [moodboard/inspo.png](moodboard/insp
 - **Accounts and teams**: sign up with an email and password. Everyone gets a private
   personal space, and can create **teams**: invite people with a link, share tasks, goals and
   a calendar, assign tasks to team members, and filter to "Assigned to me".
+- **Organizations** (optional): group a company's teams. Admins invite people once, see every
+  team with its open and overdue work, join and manage any team, add colleagues to teams without
+  a new link, and remove someone from all teams in one step.
 - **My work**: everything on your plate across all your teams on one page, grouped by when
   it's due (overdue, today, this week...), with a filter per team.
 

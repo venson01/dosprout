@@ -211,12 +211,63 @@ export interface TeamSummary {
   personal: boolean;
   /** Your role in this team. */
   role: TeamRole;
+  /**
+   * You may manage the team (rename, delete, invite, remove people, restore its data):
+   * you own it, or you're an admin of the organization it belongs to.
+   */
+  canManage: boolean;
+  /** The organization the team belongs to, or null for a team on its own. */
+  organizationId: number | null;
 }
 
-/** Who is logged in, and the teams they can switch between (personal team first). */
+/** "admin" manages the organization and every team in it; "member" works in its teams. */
+export const ORGANIZATION_ROLES = ["admin", "member"] as const;
+export type OrganizationRole = (typeof ORGANIZATION_ROLES)[number];
+
+/** An organization as one of its members sees it. */
+export interface OrganizationSummary {
+  id: number;
+  name: string;
+  /** Your role in it. */
+  role: OrganizationRole;
+}
+
+/** Who is logged in, their teams (personal team first) and their organizations. */
 export interface Me {
   user: User;
   teams: TeamSummary[];
+  organizations: OrganizationSummary[];
+}
+
+/** A team in an organization, as shown on the Organization page. */
+export interface OrganizationTeam {
+  id: number;
+  name: string;
+  memberCount: number;
+  /** Tasks in the team that aren't done. */
+  openTaskCount: number;
+  /** Tasks in the team whose due time has passed and that aren't done. */
+  overdueTaskCount: number;
+  /** Whether you're in the team (admins can join the ones they aren't in). */
+  isMember: boolean;
+}
+
+/** Someone in an organization, with the organization's teams they're in. */
+export interface OrganizationMember {
+  /** The user's id. */
+  id: number;
+  name: string;
+  email: string;
+  role: OrganizationRole;
+  joinedAt: string;
+  teamIds: number[];
+}
+
+/** Everything the Organization page shows (GET /organizations/:id). */
+export interface OrganizationDetails {
+  organization: OrganizationSummary;
+  teams: OrganizationTeam[];
+  members: OrganizationMember[];
 }
 
 /** Someone in a team. */
@@ -241,12 +292,27 @@ export interface Invite {
   expiresAt: string;
 }
 
+/** An invitation to join an organization (same link format as team invites). */
+export type OrganizationInvite = Omit<Invite, "teamId"> & { organizationId: number };
+
+/** Whether an invite link is for a team or for a whole organization. */
+export type InviteKind = "team" | "organization";
+
 /** What anyone with an invite link may see before joining (GET /invites/:token). */
 export interface InvitePreview {
-  teamName: string;
+  kind: InviteKind;
+  /** The team's or the organization's name. */
+  name: string;
   email: string;
   invitedBy: string;
   expiresAt: string;
+}
+
+/** What you joined by accepting an invite (POST /invites/:token/accept). */
+export interface AcceptedInvite {
+  kind: InviteKind;
+  /** The id of the team or organization. */
+  id: number;
 }
 
 /**

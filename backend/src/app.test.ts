@@ -18,8 +18,12 @@ import {
   type Invite,
   type InvitePreview,
   type Me,
+  type AcceptedInvite,
   type Member,
   type MyWorkGroup,
+  type OrganizationDetails,
+  type OrganizationInvite,
+  type OrganizationSummary,
   type Settings,
   type Task,
   type TeamSummary,
@@ -895,7 +899,7 @@ describe("teams", () => {
     const preview = await app.inject({ method: "GET", url: `/api/invites/${sent.token}` });
     assert.deepEqual(
       { ...(preview.json() as InvitePreview), expiresAt: undefined },
-      { teamName: "Marketing", email: "bob@example.com", invitedBy: "Ada", expiresAt: undefined },
+      { kind: "team", name: "Marketing", email: "bob@example.com", invitedBy: "Ada", expiresAt: undefined },
     );
 
     // The invite only works for the address it was sent to.
@@ -929,7 +933,9 @@ describe("teams", () => {
 
     const accepted = await app.inject({ method: "POST", url: `/api/invites/${token}/accept`, headers: { cookie: bob.cookie } });
     assert.equal(accepted.statusCode, 200, accepted.body);
-    assert.deepEqual((accepted.json() as TeamSummary).role, "member");
+    assert.equal((accepted.json() as AcceptedInvite).kind, "team");
+    const bobsTeams = (await app.inject({ method: "GET", url: "/api/auth/me", headers: { cookie: bob.cookie } })).json() as Me;
+    assert.equal(bobsTeams.teams.find((t) => t.id === team.id)?.role, "member");
   });
 
   test("only the owner manages invites, and nobody shares a personal team", async () => {
@@ -1068,5 +1074,245 @@ describe("teams", () => {
     assert.deepEqual(bobs.map((g) => g.tasks.map((t) => t.title)), [[], ["For Bob"]]);
 
     assert.equal((await app.inject({ method: "GET", url: "/api/my-work" })).statusCode, 401);
+  });
+});
+
+describe("organizations", () => {
+  /** Acting as someone else: their cookie (plus any other headers). */
+  const as = (personCookie: string) => (options: InjectOptions) =>
+    app.inject({ ...options, headers: { cookie: personCookie, ...options.headers } });
+
+  /** Ada creates an organization; returns it. */
+  async function createOrganization(name = "Acme"): Promise<OrganizationSummary> {
+    const response = await inject({ method: "POST", url: "/api/organizations", payload: { name } });
+    assert.equal(response.statusCode, 201, response.body);
+    return response.json();
+  }
+
+  /** Ada creates a team (on its own, or in an organization). */
+  async function createTeam(name: string, organizationId: number | null = null): Promise<TeamSummary> {
+    const response = await inject({ method: "POST", url: "/api/teams", payload: { name, organizationId } });
+    assert.equal(response.statusCode, 201, response.body);
+    return response.json();
+  }
+
+  /** Ada creates "Acme" and invites Bob to it; Bob signs up through the link. */
+  async function organizationWithBob() {
+    const organization = await createOrganization();
+    const sent = await inject({
+      method: "POST",
+      url: `/api/organizations/${organization.id}/invites`,
+      payload: { email: "bob@example.com" },
+    });
+    assert.equal(sent.statusCode, 201, sent.body);
+    const bob = await signUp("Bob", "bob@example.com", { inviteToken: (sent.json() as OrganizationInvite).token });
+    const me = (await inject({ method: "GET", url: "/api/auth/me" })).json() as Me;
+    return { organization, bob, bobId: bob.me.user.id, adaId: me.user.id, asBob: as(bob.cookie) };
+  }
+
+  const myself = async (personCookie = cookie) =>
+    (await app.inject({ method: "GET", url: "/api/auth/me", headers: { cookie: personCookie } })).json() as Me;
+
+  test("creating an organization makes you its admin", async () => {
+    const organization = await createOrganization("  Acme  ");
+    assert.deepEqual([organization.name, organization.role], ["Acme", "admin"]);
+    assert.deepEqual((await myself()).organizations.map((o) => [o.name, o.role]), [["Acme", "admin"]]);
+  });
+
+  test("an organization invite link: preview it, sign up with it, and you're a member", async () => {
+    const organization = await createOrganization();
+    const sent = (await inject({
+      method: "POST",
+      url: `/api/organizations/${organization.id}/invites`,
+      payload: { email: "bob@example.com" },
+    })).json() as OrganizationInvite;
+
+    const preview = (await app.inject({ method: "GET", url: `/api/invites/${sent.token}` })).json() as InvitePreview;
+    assert.deepEqual([preview.kind, preview.name, preview.invitedBy], ["organization", "Acme", "Ada"]);
+
+    const bob = await signUp("Bob", "bob@example.com", { inviteToken: sent.token });
+    assert.deepEqual(bob.me.organizations.map((o) => [o.name, o.role]), [["Acme", "member"]]);
+    assert.equal((await app.inject({ method: "GET", url: `/api/invites/${sent.token}` })).statusCode, 404, "used up");
+
+    // Existing accounts accept while logged in; members can't invite.
+    const carol = await signUp("Carol", "carol@example.com");
+    const asBob = as(bob.cookie);
+    const bobInvites = await asBob({
+      method: "POST",
+      url: `/api/organizations/${organization.id}/invites`,
+      payload: { email: "carol@example.com" },
+    });
+    assert.equal(bobInvites.statusCode, 403);
+    const second = (await inject({
+      method: "POST",
+      url: `/api/organizations/${organization.id}/invites`,
+      payload: { email: "carol@example.com" },
+    })).json() as OrganizationInvite;
+    const accepted = await as(carol.cookie)({ method: "POST", url: `/api/invites/${second.token}/accept` });
+    assert.deepEqual(accepted.json() as AcceptedInvite, { kind: "organization", id: organization.id });
+  });
+
+  test("joining a team that's in an organization also makes you an organization member", async () => {
+    const organization = await createOrganization();
+    const team = await createTeam("Marketing", organization.id);
+    assert.equal(team.organizationId, organization.id);
+    const { token } = (await inject({
+      method: "POST",
+      url: `/api/teams/${team.id}/invites`,
+      payload: { email: "carol@example.com" },
+    })).json() as Invite;
+    const carol = await signUp("Carol", "carol@example.com", { inviteToken: token });
+    assert.deepEqual(carol.me.organizations.map((o) => [o.name, o.role]), [["Acme", "member"]]);
+  });
+
+  test("members can create teams in their organization; outsiders can't", async () => {
+    const { organization, asBob } = await organizationWithBob();
+    const bobsTeam = await asBob({ method: "POST", url: "/api/teams", payload: { name: "Design", organizationId: organization.id } });
+    assert.equal(bobsTeam.statusCode, 201);
+    assert.deepEqual([(bobsTeam.json() as TeamSummary).role, (bobsTeam.json() as TeamSummary).canManage], ["owner", true]);
+
+    const eve = await signUp("Eve", "eve@example.com");
+    const outsider = await as(eve.cookie)({ method: "POST", url: "/api/teams", payload: { name: "Sneaky", organizationId: organization.id } });
+    assert.equal(outsider.statusCode, 404);
+  });
+
+  test("admins can join and manage any team in the organization; members can't", async () => {
+    const { organization, asBob } = await organizationWithBob();
+    const design = (await asBob({ method: "POST", url: "/api/teams", payload: { name: "Design", organizationId: organization.id } })).json() as TeamSummary;
+
+    // Ada isn't in Design yet, so she can't open it...
+    assert.equal((await inject({ method: "GET", url: `/api/teams/${design.id}/members` })).statusCode, 404);
+    // ...but as an admin she can join it, and then manage it.
+    const joined = await inject({ method: "POST", url: `/api/organizations/${organization.id}/teams/${design.id}/join` });
+    assert.equal(joined.statusCode, 200, joined.body);
+    assert.deepEqual([(joined.json() as TeamSummary).role, (joined.json() as TeamSummary).canManage], ["member", true]);
+    const renamed = await inject({ method: "PATCH", url: `/api/teams/${design.id}`, payload: { name: "Product design" } });
+    assert.equal((renamed.json() as TeamSummary).name, "Product design");
+    const teamInvite = await inject({ method: "POST", url: `/api/teams/${design.id}/invites`, payload: { email: "new@example.com" } });
+    assert.equal(teamInvite.statusCode, 201);
+
+    // A member (Bob) can't join teams he isn't in.
+    const adaTeam = await createTeam("Sales", organization.id);
+    const bobJoins = await asBob({ method: "POST", url: `/api/organizations/${organization.id}/teams/${adaTeam.id}/join` });
+    assert.equal(bobJoins.statusCode, 403);
+  });
+
+  test("in an organization, team managers add colleagues directly; others need a link", async () => {
+    const { organization, bobId } = await organizationWithBob();
+    const team = await createTeam("Sales", organization.id);
+    const added = await inject({ method: "POST", url: `/api/teams/${team.id}/members`, payload: { userId: bobId } });
+    assert.equal(added.statusCode, 201, added.body);
+    assert.deepEqual((added.json() as Member[]).map((m) => m.name), ["Ada", "Bob"]);
+
+    const eve = await signUp("Eve", "eve@example.com");
+    const outsider = await inject({ method: "POST", url: `/api/teams/${team.id}/members`, payload: { userId: eve.me.user.id } });
+    assert.equal(outsider.statusCode, 400, "Eve isn't in the organization");
+
+    const standalone = await createTeam("Book club");
+    const notInOrganization = await inject({ method: "POST", url: `/api/teams/${standalone.id}/members`, payload: { userId: bobId } });
+    assert.equal(notInOrganization.statusCode, 400);
+  });
+
+  test("removing someone from the organization takes them out of all its teams", async () => {
+    const { organization, bob, bobId, adaId, asBob } = await organizationWithBob();
+    // Bob owns a team in the organization, and has a task assigned in Ada's team.
+    const design = (await asBob({ method: "POST", url: "/api/teams", payload: { name: "Design", organizationId: organization.id } })).json() as TeamSummary;
+    const sales = await createTeam("Sales", organization.id);
+    await inject({ method: "POST", url: `/api/teams/${sales.id}/members`, payload: { userId: bobId } });
+    const task = (await inject({
+      method: "POST",
+      url: "/api/tasks",
+      headers: { "x-team-id": String(sales.id) },
+      payload: { title: "Bob's job", assigneeId: bobId },
+    })).json() as Task;
+    await asBob({ method: "POST", url: "/api/tasks", payload: { title: "Bob's own" } });
+
+    const removed = await inject({ method: "DELETE", url: `/api/organizations/${organization.id}/members/${bobId}` });
+    assert.equal(removed.statusCode, 204, removed.body);
+
+    const bobNow = await myself(bob.cookie);
+    assert.deepEqual(bobNow.organizations, []);
+    assert.deepEqual(bobNow.teams.map((t) => t.name), ["Personal"], "out of every team in the organization");
+    const bobsTasks = (await asBob({ method: "GET", url: "/api/tasks" })).json() as Task[];
+    assert.deepEqual(bobsTasks.map((t) => t.title), ["Bob's own"], "his personal space is untouched");
+
+    // Ada (the admin who removed him) now owns Design; Bob's task in Sales is unassigned.
+    const adaNow = await myself();
+    assert.equal(adaNow.teams.find((t) => t.id === design.id)?.role, "owner");
+    const salesTask = await inject({ method: "GET", url: `/api/tasks/${task.id}`, headers: { "x-team-id": String(sales.id) } });
+    assert.equal((salesTask.json() as Task).assigneeId, null);
+    assert.ok(adaId);
+  });
+
+  test("an organization always keeps an admin", async () => {
+    const { organization, bob, bobId, adaId } = await organizationWithBob();
+    const url = `/api/organizations/${organization.id}/members`;
+    assert.equal((await inject({ method: "PATCH", url: `${url}/${adaId}`, payload: { role: "member" } })).statusCode, 400);
+    assert.equal((await inject({ method: "DELETE", url: `${url}/${adaId}` })).statusCode, 400);
+    // Members can't change roles.
+    assert.equal((await as(bob.cookie)({ method: "PATCH", url: `${url}/${bobId}`, payload: { role: "admin" } })).statusCode, 403);
+
+    // Once Bob is an admin too, Ada can leave; the team she owned goes to Bob.
+    const team = await createTeam("Sales", organization.id);
+    assert.equal((await inject({ method: "PATCH", url: `${url}/${bobId}`, payload: { role: "admin" } })).statusCode, 204);
+    assert.equal((await inject({ method: "DELETE", url: `${url}/${adaId}` })).statusCode, 204);
+    const bobNow = await myself(bob.cookie);
+    assert.deepEqual(bobNow.organizations.map((o) => o.role), ["admin"]);
+    assert.equal(bobNow.teams.find((t) => t.id === team.id)?.role, "owner");
+  });
+
+  test("moving a team into an organization needs admin rights and brings its members along", async () => {
+    const { organization, asBob } = await organizationWithBob();
+    // Ada's team on its own, with Eve in it.
+    const team = await createTeam("Book club");
+    const { token } = (await inject({ method: "POST", url: `/api/teams/${team.id}/invites`, payload: { email: "eve@example.com" } })).json() as Invite;
+    const eve = await signUp("Eve", "eve@example.com", { inviteToken: token });
+
+    // Bob is only a member of Acme, so he can't move his team into it.
+    const bobsTeam = (await asBob({ method: "POST", url: "/api/teams", payload: { name: "Bob's" } })).json() as TeamSummary;
+    const bobMoves = await asBob({ method: "PATCH", url: `/api/teams/${bobsTeam.id}`, payload: { organizationId: organization.id } });
+    assert.equal(bobMoves.statusCode, 403);
+
+    const moved = await inject({ method: "PATCH", url: `/api/teams/${team.id}`, payload: { organizationId: organization.id } });
+    assert.equal((moved.json() as TeamSummary).organizationId, organization.id);
+    assert.deepEqual((await myself(eve.cookie)).organizations.map((o) => o.name), ["Acme"], "Eve joined Acme with her team");
+
+    const movedOut = await inject({ method: "PATCH", url: `/api/teams/${team.id}`, payload: { organizationId: null } });
+    assert.equal((movedOut.json() as TeamSummary).organizationId, null);
+  });
+
+  test("the overview: teams with open and overdue tasks, members with their teams", async () => {
+    const { organization, bobId, asBob } = await organizationWithBob();
+    const team = await createTeam("Sales", organization.id);
+    const headers = { "x-team-id": String(team.id) };
+    await inject({ method: "POST", url: "/api/tasks", headers, payload: { title: "Late", dueAt: "2020-01-01T09:00:00.000Z" } });
+    await inject({ method: "POST", url: "/api/tasks", headers, payload: { title: "Open" } });
+    await inject({ method: "POST", url: "/api/tasks", headers, payload: { title: "Finished", status: "done" } });
+
+    const details = (await inject({ method: "GET", url: `/api/organizations/${organization.id}` })).json() as OrganizationDetails;
+    assert.deepEqual(
+      details.teams.map((t) => [t.name, t.memberCount, t.openTaskCount, t.overdueTaskCount, t.isMember]),
+      [["Sales", 1, 2, 1, true]],
+    );
+    assert.deepEqual(
+      details.members.map((m) => [m.name, m.role, m.teamIds]),
+      [["Ada", "admin", [team.id]], ["Bob", "member", []]],
+    );
+    assert.ok(bobId);
+
+    // Bob (a member) sees it too; outsiders don't.
+    assert.equal((await asBob({ method: "GET", url: `/api/organizations/${organization.id}` })).statusCode, 200);
+    const eve = await signUp("Eve", "eve@example.com");
+    assert.equal((await as(eve.cookie)({ method: "GET", url: `/api/organizations/${organization.id}` })).statusCode, 404);
+  });
+
+  test("deleting an organization keeps its teams, now on their own", async () => {
+    const { organization, asBob } = await organizationWithBob();
+    const team = await createTeam("Sales", organization.id);
+    assert.equal((await asBob({ method: "DELETE", url: `/api/organizations/${organization.id}` })).statusCode, 403);
+    assert.equal((await inject({ method: "DELETE", url: `/api/organizations/${organization.id}` })).statusCode, 204);
+    const me = await myself();
+    assert.deepEqual(me.organizations, []);
+    assert.equal(me.teams.find((t) => t.id === team.id)?.organizationId, null);
   });
 });
