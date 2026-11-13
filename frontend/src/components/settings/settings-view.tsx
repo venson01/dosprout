@@ -2,11 +2,13 @@
 
 import { Check, Download, Monitor, Moon, Plus, Sun, Trash, Upload, Volume2, X } from "lucide-react";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { Avatar } from "@/components/layout/avatar";
 import { DesktopNotificationsSetting } from "@/components/layout/notifications";
 import { ErrorToast, LoadError, LoadingSkeleton } from "@/components/tasks/feedback";
 import { useAuth } from "@/hooks/auth-context";
 import { useTaskList } from "@/hooks/tasks-context";
 import { api } from "@/lib/api";
+import { squareAvatar } from "@/lib/avatar-image";
 import { dayKey } from "@/lib/calendar";
 import { playSound } from "@/lib/sounds";
 import { PRIORITY_LABELS } from "@/lib/task-helpers";
@@ -84,6 +86,7 @@ export function SettingsView() {
       {loadState === "error" && <LoadError message={loadError} onRetry={reload} />}
       {loadState === "ready" && (
         <div className="space-y-5">
+          <ProfileSection onError={setToast} />
           <AppearanceSection settings={settings} save={save} />
           <TimerSection settings={settings} save={save} />
           <NotificationSection settings={settings} save={save} />
@@ -105,13 +108,95 @@ interface SectionProps {
   save: (input: UpdateSettingsInput) => void;
 }
 
-function Section({ title, description, children }: { title: string; description?: string; children: React.ReactNode }) {
+function Section({
+  title,
+  description,
+  id,
+  children,
+}: {
+  title: string;
+  description?: string;
+  /** For links to this section (e.g. /settings#profile). */
+  id?: string;
+  children: React.ReactNode;
+}) {
   return (
-    <section className="rounded-xl border border-line bg-surface p-4 sm:p-5">
+    <section id={id} className="scroll-mt-20 rounded-xl border border-line bg-surface p-4 sm:p-5">
       <h2 className="font-semibold">{title}</h2>
       {description && <p className="mt-0.5 text-sm text-muted">{description}</p>}
       <div className="mt-4">{children}</div>
     </section>
+  );
+}
+
+/** Your name, email and profile picture (upload, change, remove). */
+function ProfileSection({ onError }: { onError: (message: string) => void }) {
+  const { user, refresh } = useAuth();
+  const { reloadMembers } = useTaskList();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState<"upload" | "remove" | null>(null);
+  const hasPicture = user.avatarUpdatedAt !== null;
+
+  async function change(kind: "upload" | "remove", action: () => Promise<unknown>) {
+    setBusy(kind);
+    try {
+      await action();
+      // Load who you are (top bar, this card) and the team's members (task badges) again,
+      // so the new picture shows everywhere straight away.
+      await Promise.all([refresh(), reloadMembers()]);
+    } catch (error) {
+      onError(`Your picture wasn't changed: ${(error as Error).message}`);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <Section id="profile" title="Profile" description="Your picture shows next to your name, for you and your teammates.">
+      <div className="flex flex-wrap items-center gap-4">
+        <Avatar person={user} size="lg" />
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-medium">{user.name}</p>
+          <p className="truncate text-sm text-muted">{user.email}</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            disabled={busy !== null}
+            className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-brand ring-1 ring-line hover:bg-brand-soft disabled:opacity-60"
+          >
+            <Upload className="size-4" />
+            {busy === "upload" ? "Uploading..." : hasPicture ? "Change picture" : "Upload picture"}
+          </button>
+          {hasPicture && (
+            <button
+              type="button"
+              onClick={() => change("remove", api.removeAvatar)}
+              disabled={busy !== null}
+              className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-high ring-1 ring-line hover:bg-high-bg disabled:opacity-60"
+            >
+              <Trash className="size-4" />
+              {busy === "remove" ? "Removing..." : "Remove"}
+            </button>
+          )}
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = ""; // So choosing the same file again still works.
+              if (file) change("upload", async () => api.setAvatar(await squareAvatar(file)));
+            }}
+          />
+        </div>
+      </div>
+      <p className="mt-3 text-xs text-muted">
+        Any photo works: it&apos;s cropped to a square from the middle and made small before uploading.
+      </p>
+    </Section>
   );
 }
 

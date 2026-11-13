@@ -197,6 +197,17 @@ export interface User {
   email: string;
   name: string;
   createdAt: string;
+  /**
+   * When the profile picture was last changed, or null when there is none (then the
+   * initials are shown). The picture is at /users/:id/avatar.
+   */
+  avatarUpdatedAt: string | null;
+}
+
+/** A new profile picture (PUT /me/avatar): a small square image as a data URL. */
+export interface AvatarInput {
+  /** "data:image/jpeg;base64,..." (JPEG, PNG or WebP, at most 200 KB). */
+  image: string;
 }
 
 /** "owner" can rename / delete the team and invite / remove people; "member" can work in it. */
@@ -261,6 +272,7 @@ export interface OrganizationMember {
   role: OrganizationRole;
   joinedAt: string;
   teamIds: number[];
+  avatarUpdatedAt: string | null;
 }
 
 /** Everything the Organization page shows (GET /organizations/:id). */
@@ -278,6 +290,7 @@ export interface Member {
   email: string;
   role: TeamRole;
   joinedAt: string;
+  avatarUpdatedAt: string | null;
 }
 
 /** An invitation to join a team, waiting to be accepted. The link is /invite/<token>. */

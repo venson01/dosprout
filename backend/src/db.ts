@@ -184,6 +184,18 @@ const MIGRATIONS: string[] = [
   ALTER TABLE teams ADD COLUMN organization_id INTEGER;
   CREATE INDEX teams_organization_id ON teams(organization_id);
   `,
+
+  // Version 9: profile pictures. The picture itself is in its own table, so the many
+  // queries that read users don't load it. users.avatar_updated_at says whether someone
+  // has one (NULL = no) and changes with every upload, so browsers fetch the new one.
+  `
+  CREATE TABLE avatars (
+    user_id      INTEGER PRIMARY KEY,
+    content_type TEXT    NOT NULL,
+    data         TEXT    NOT NULL
+  );
+  ALTER TABLE users ADD COLUMN avatar_updated_at TEXT;
+  `,
 ];
 
 export interface OpenDatabaseOptions {

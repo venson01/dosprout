@@ -185,7 +185,7 @@ function MembersCard({ team, onError }: { team: TeamSummary; onError: (message: 
         <ul className="divide-y divide-line">
           {members.map((member) => (
             <li key={member.id} className="flex items-center gap-3 py-2.5">
-              <Avatar name={member.name} />
+              <Avatar person={member} />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium">
                   {member.name}

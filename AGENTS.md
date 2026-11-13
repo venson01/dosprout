@@ -105,6 +105,8 @@ backend/src/
   routes/teams.ts    /teams, /teams/:id, members, invites (canManage checks live here)
   routes/organizations.ts  /organizations/... (admin checks live here)
   routes/my-work.ts  /my-work: your tasks in all teams (tasksForPerson + goalsForPerson)
+  routes/profile.ts  profile pictures: PUT / DELETE /me/avatar, GET /users/:id/avatar
+                     (parseAvatar checks the image's first bytes, see "Profile pictures")
   types.ts           API data types (source of truth)
   copy-tasks.ts      copyTasks(): copies every table (accounts, teams, tasks...) between two
                      databases (keeps ids)
@@ -131,7 +133,8 @@ frontend/src/
   components/my-work/ MyWorkView: your tasks from every team, grouped by due date; team filter;
                      tick done; clicking a task switches to its team and opens /tasks?open=<id>
   components/layout/ AppShell (AuthProvider + TasksProvider keyed by team), Sidebar (Space
-                     switcher, Log Out), TopBar (search box, your name), Avatar (initials),
+                     switcher, Log Out), TopBar (search box, your name: a link to your
+                     profile), Avatar (profile picture, or initials),
                      Notifications (bell, list, pop-ups),
                      TimerPill (the running timer / break in the top bar), TimerPopout
                      (the pop-out timer window's content), ThemeSync
@@ -142,7 +145,8 @@ frontend/src/
   components/goals/  GoalsView (one card per goal: progress, target date, its tasks), GoalDialog
   components/time/   TimeView (now card, tracked-time chart, time per task, entry log), EntryDialog
                      BigClock (the big centered clock, sized to fit; also used by the pop-out)
-  components/settings/ SettingsView: appearance, timer & calendar, notifications, task defaults, data
+  components/settings/ SettingsView: profile (picture), appearance, timer & calendar,
+                     notifications, task defaults, data
   components/inline-script.tsx  a <script> that runs before the first paint (theme)
   components/charts/ PeriodChart + usePeriodParam: the column chart with the Day/Week/Month switch
                      (Dashboard "Completed" and Time "Tracked time")
@@ -175,6 +179,7 @@ frontend/src/
   lib/theme.ts       THEME_STORAGE_KEY + THEME_SCRIPT (shared by the server layout and ThemeSync)
   lib/goals.ts       goal colors (GOAL_COLOR_CLASSES), goalProgress, targetStatus, sortGoals
   lib/my-work.ts     My work helpers (take `now`): dueGroup, groupByDue, myWorkItems, recentlyDone
+  lib/avatar-image.ts squareAvatar(file): any picture -> a 256 x 256 JPEG data URL (center crop)
 ```
 
 ## API
@@ -193,6 +198,9 @@ the `X-Team-Id` header (your personal team when it's missing; 404 if you're not 
 | POST   | `/auth/login`                        | `email`, `password`                               | `Me` + cookie; 401 if wrong |
 | POST   | `/auth/logout`                       |                                                   | 204, clears the cookie |
 | GET    | `/auth/me`                           |                                                   | `Me` (`user` + `teams`, personal first) |
+| PUT    | `/me/avatar`                         | `{ image }`: a JPEG / PNG / WebP data URL, at most 200 KB | `User` (new `avatarUpdatedAt`) |
+| DELETE | `/me/avatar`                         |                                                   | `User` (`avatarUpdatedAt: null`) |
+| GET    | `/users/:id/avatar`                  | (yourself, or someone you share a team / organization with) | the image; 404 if none or not allowed |
 | POST   | `/teams`                             | `{ name, organizationId? }` (must be in that organization) | `TeamSummary` (201), you're the owner |
 | PATCH  | `/teams/:id`                         | `{ name?, organizationId? }` (manager, not personal; moving needs admin of both organizations) | `TeamSummary` |
 | DELETE | `/teams/:id`                         | (manager, not personal) deletes ALL its data      | 204              |
@@ -319,6 +327,15 @@ Data model:
   - Deleting an organization keeps its teams (they become teams on their own).
   - Invite links share `/invite/<token>` with team invites; `findInvite` (routes/auth.ts) looks in
     both tables. `InvitePreview.kind` tells the page which it is.
+- **Profile pictures** (Settings > Profile; the top bar's name links there). The browser shrinks
+  the picture first (`squareAvatar`: center square, 256 x 256 JPEG, about 5 to 30 KB) and sends it
+  as a data URL. The backend checks the real file type from its first bytes (JPEG / PNG / WebP
+  only: never SVG, which can hold scripts), stores it base64 in the `avatars` table (its own
+  table, so reading users doesn't load pictures) and sets `users.avatar_updated_at`.
+  `User`, `Member` and `OrganizationMember` carry `avatarUpdatedAt`; `<Avatar person={...}>`
+  shows `/api/users/:id/avatar?v=<avatarUpdatedAt>` (a new address per picture, so it's cached
+  for good) and falls back to initials when there's none or it fails to load. It's a plain
+  `<img>`: Next's image optimizer couldn't send the login cookie.
 - Not built: password reset, email verification, changing your name / email / password,
   transferring team ownership, login rate limiting, an organization-wide dashboard beyond the
   Organization page's numbers.
@@ -497,7 +514,7 @@ Data model:
 
 ## Not built yet (possible next steps)
 
-- Password reset, email verification, editing your profile, transferring team ownership.
+- Password reset, email verification, editing your name / email / password, transferring team ownership.
 - Live updates between browsers: each page loads the data once (and the timer re-syncs on
   start / stop), so changes made elsewhere show after a reload.
 - Reordering cards within a board column (drag & drop currently only changes the column).

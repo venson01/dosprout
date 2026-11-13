@@ -34,6 +34,7 @@ interface MemberRow {
   email: string;
   role: OrganizationRole;
   joined_at: string;
+  avatar_updated_at: string | null;
 }
 
 interface InviteRow {
@@ -161,7 +162,8 @@ export class OrganizationStore {
           args: [userId, organization.id],
         },
         {
-          sql: `SELECT users.id, users.name, users.email, organization_members.role, organization_members.joined_at
+          sql: `SELECT users.id, users.name, users.email, users.avatar_updated_at, organization_members.role,
+                       organization_members.joined_at
                 FROM organization_members JOIN users ON users.id = organization_members.user_id
                 WHERE organization_members.organization_id = ?
                 ORDER BY organization_members.role = 'admin' DESC, users.name COLLATE NOCASE, users.id`,
@@ -197,6 +199,7 @@ export class OrganizationStore {
       role: row.role,
       joinedAt: row.joined_at,
       teamIds: teamsByUser.get(row.id) ?? [],
+      avatarUpdatedAt: row.avatar_updated_at,
     }));
     return { organization, teams, members };
   }

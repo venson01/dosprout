@@ -1,6 +1,7 @@
 "use client";
 
 import { Menu, Search } from "lucide-react";
+import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import { useAuth } from "@/hooks/auth-context";
@@ -33,14 +34,19 @@ export function TopBar({ onOpenMenu }: { onOpenMenu: () => void }) {
       <div className="ml-auto flex shrink-0 items-center gap-2 sm:gap-3">
         <TimerPill />
         <Notifications />
-        {/* Hidden on phones to leave room for the timer (the sidebar shows the team there). */}
-        <div className="hidden sm:block">
-          <Avatar name={user.name} />
-        </div>
-        <div className="hidden min-w-0 max-w-40 leading-tight sm:block">
-          <p className="truncate text-sm font-medium">{user.name}</p>
-          <p className="truncate text-xs text-muted">{team.personal ? "Personal" : team.name}</p>
-        </div>
+        {/* Hidden on phones to leave room for the timer (the sidebar shows the team there).
+            A link to your profile, where you change your picture. */}
+        <Link
+          href="/settings#profile"
+          title="Your profile"
+          className="hidden min-w-0 items-center gap-3 rounded-lg p-1 outline-none hover:bg-page focus-visible:ring-2 focus-visible:ring-brand sm:flex"
+        >
+          <Avatar person={user} />
+          <span className="block min-w-0 max-w-40 leading-tight">
+            <span className="block truncate text-sm font-medium">{user.name}</span>
+            <span className="block truncate text-xs text-muted">{team.personal ? "Personal" : team.name}</span>
+          </span>
+        </Link>
       </div>
     </header>
   );

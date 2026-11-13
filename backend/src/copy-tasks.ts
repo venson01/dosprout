@@ -4,6 +4,7 @@ import type { Client, InStatement } from "@libsql/client";
 // (The schema_version table isn't copied: openDatabase() already set it up in both.)
 const TABLES = [
   "users",
+  "avatars",
   "sessions",
   "teams",
   "team_members",
