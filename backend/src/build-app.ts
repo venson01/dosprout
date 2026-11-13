@@ -7,6 +7,7 @@ import { OrganizationStore } from "./organization-store.js";
 import { authRoutes } from "./routes/auth.js";
 import { myWorkRoutes } from "./routes/my-work.js";
 import { organizationRoutes } from "./routes/organizations.js";
+import { planRoutes } from "./routes/plan.js";
 import { profileRoutes } from "./routes/profile.js";
 import { goalRoutes } from "./routes/goals.js";
 import { settingsRoutes } from "./routes/settings.js";
@@ -87,6 +88,7 @@ export function buildApp(options: AppOptions) {
       await loggedIn.register(profileRoutes, { prefix: "/api", accounts });
       // Across all your teams, so it doesn't use the X-Team-Id header.
       await loggedIn.register(myWorkRoutes, { prefix: "/api", db, teams });
+      await loggedIn.register(planRoutes, { prefix: "/api", db });
 
       // Routes about one team's data: the team comes from the X-Team-Id header.
       await loggedIn.register(async (inTeam) => {

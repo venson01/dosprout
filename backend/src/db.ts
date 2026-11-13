@@ -196,6 +196,20 @@ const MIGRATIONS: string[] = [
   );
   ALTER TABLE users ADD COLUMN avatar_updated_at TEXT;
   `,
+
+  // Version 10: "Plan my day". Which tasks each person planned for which day (their own
+  // local day, "2026-11-13"). Per person, because a team task can be on several plans.
+  // One day per task: planning it for another day moves it.
+  `
+  CREATE TABLE day_plans (
+    user_id    INTEGER NOT NULL,
+    task_id    INTEGER NOT NULL,
+    day        TEXT    NOT NULL,
+    created_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    PRIMARY KEY (user_id, task_id)
+  );
+  CREATE INDEX day_plans_task_id ON day_plans(task_id);
+  `,
 ];
 
 export interface OpenDatabaseOptions {

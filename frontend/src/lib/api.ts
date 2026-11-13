@@ -4,6 +4,7 @@ import type {
   CreateGoalInput,
   CreateTaskInput,
   CreateTimeEntryInput,
+  EstimateSample,
   Goal,
   Invite,
   InvitePreview,
@@ -15,6 +16,7 @@ import type {
   OrganizationInvite,
   OrganizationRole,
   OrganizationSummary,
+  PlanEntry,
   Settings,
   SignupInput,
   StartTimerInput,
@@ -158,6 +160,13 @@ export const api = {
 
   // ---- My work (all your teams at once) ----
   myWork: () => request<MyWorkGroup[]>("/my-work"),
+  // ---- Plan my day + estimate accuracy (all your teams, no X-Team-Id needed) ----
+  plan: () => request<PlanEntry[]>("/plan"),
+  /** Plans a task for a day ("2026-11-13"), or moves it there. */
+  planTask: (taskId: number, day: string) =>
+    request<PlanEntry>(`/plan/${taskId}`, { method: "PUT", body: json({ day }) }),
+  unplanTask: (taskId: number) => request<void>(`/plan/${taskId}`, { method: "DELETE" }),
+  estimates: () => request<EstimateSample[]>("/estimates"),
   /** Changes a task in a given team (My work shows tasks from every team). */
   updateTaskInTeam: (teamId: number, id: number, input: UpdateTaskInput) =>
     request<Task>(`/tasks/${id}`, { method: "PATCH", body: json(input) }, teamId),

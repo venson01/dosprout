@@ -3,6 +3,7 @@
 import {
   AlarmClock,
   Building2,
+  CalendarCheck,
   CalendarDays,
   ChartColumn,
   CircleCheck,
@@ -28,7 +29,8 @@ interface NavItem {
 
 const MAIN_NAV: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: ChartColumn },
-  // Across all your teams (the other pages show the current team).
+  // These two span all your teams (the other pages show the current team).
+  { href: "/today", label: "Today", icon: CalendarCheck },
   { href: "/my-work", label: "My work", icon: ListTodo },
   { href: "/tasks", label: "Tasks", icon: CircleCheck },
   { href: "/goals", label: "Goals", icon: Star },

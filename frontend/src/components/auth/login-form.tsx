@@ -5,12 +5,14 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { safeNextPath } from "@/hooks/auth-context";
 import { api } from "@/lib/api";
-import { AuthCard, Field, FormError, primaryButton } from "./auth-card";
+import { LockKeyhole, Mail } from "lucide-react";
+import { AuthCard, Field, FormError, PasswordField, SubmitButton } from "./auth-card";
 
 export function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   // Where to go afterwards (e.g. back to an invite link). Only pages on this site.
+  // (The form is sized so the whole page fits on one screen, see AuthCard.)
   const next = safeNextPath(searchParams.get("next"));
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -31,30 +33,32 @@ export function LoginForm() {
   }
 
   return (
-    <AuthCard title="Welcome back" subtitle="Log in to see your tasks and your teams.">
-      <form onSubmit={handleSubmit} className="space-y-4">
+    <AuthCard mood="login" title="Welcome back" subtitle="Log in to see your tasks and your teams.">
+      <form onSubmit={handleSubmit} className="space-y-3.5 sm:space-y-4 big:space-y-5 huge:space-y-7">
         <Field
           label="Email"
+          icon={Mail}
+          placeholder="you@example.com"
           type="email"
           autoComplete="email"
           required
           value={email}
           onChange={(e) => setEmail(e.target.value)}
         />
-        <Field
+        <PasswordField
           label="Password"
-          type="password"
+          icon={LockKeyhole}
           autoComplete="current-password"
           required
           value={password}
           onChange={(e) => setPassword(e.target.value)}
         />
         <FormError message={error} />
-        <button type="submit" disabled={busy} className={primaryButton}>
-          {busy ? "Logging in..." : "Log in"}
-        </button>
+        <SubmitButton busy={busy} busyLabel="Logging in...">
+          Log in
+        </SubmitButton>
       </form>
-      <p className="mt-5 text-center text-sm text-muted">
+      <p className="mt-4 text-center text-sm text-muted big:mt-6 big:text-base huge:mt-8 huge:text-lg">
         New to DoSprout?{" "}
         <Link
           // Keep "next" so an invite link still works after signing up instead.

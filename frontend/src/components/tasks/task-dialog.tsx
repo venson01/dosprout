@@ -4,6 +4,7 @@ import { Check, Flag, Plus, Trash, X } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { useAuth } from "@/hooks/auth-context";
 import { useTaskList } from "@/hooks/tasks-context";
+import { estimateHint } from "@/lib/estimates";
 import { formatDuration, trackedByTask } from "@/lib/time";
 import type { DraftSubtask, TaskDraft } from "@/hooks/use-tasks";
 import {
@@ -95,7 +96,7 @@ export function TaskDialog({
 }: TaskDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const titleRef = useRef<HTMLInputElement>(null);
-  const { goals, members, timeEntries, now, settings } = useTaskList();
+  const { goals, members, timeEntries, now, settings, estimates } = useTaskList();
   // Tasks are only assigned in teams (in your personal space they're all yours).
   const { team } = useAuth();
   const [draft, setDraft] = useState(() =>
@@ -365,6 +366,7 @@ export function TaskDialog({
           <EstimateField
             minutes={draft.estimateMinutes}
             tracked={tracked}
+            hint={estimateHint(draft.estimateMinutes, draft.tag, estimates)}
             onChange={(minutes) => update("estimateMinutes", minutes)}
           />
 
@@ -533,11 +535,14 @@ function DateTimeField({ label, date, time, defaultTime, onChange }: DateTimeFie
 function EstimateField({
   minutes,
   tracked,
+  hint,
   onChange,
 }: {
   minutes: number | null;
   /** Time tracked so far, in milliseconds. */
   tracked: number;
+  /** What your history says this estimate really means (see estimateHint), or null. */
+  hint: string | null;
   onChange: (minutes: number | null) => void;
 }) {
   const ids = useId();
@@ -580,6 +585,10 @@ function EstimateField({
         <span className="text-muted">m</span>
         {tracked > 0 && <span className="ml-auto text-muted">Tracked so far: {formatDuration(tracked)}</span>}
       </div>
+      {/* aria-live: screen readers hear the new advice as the estimate or tag changes. */}
+      <p aria-live="polite" className="mt-1.5 text-xs text-muted">
+        {hint}
+      </p>
     </div>
   );
 }

@@ -9,6 +9,7 @@ import { useAuth } from "@/hooks/auth-context";
 import { useTaskList } from "@/hooks/tasks-context";
 import { api } from "@/lib/api";
 import { squareAvatar } from "@/lib/avatar-image";
+import { formatMinutes } from "@/lib/estimates";
 import { dayKey } from "@/lib/calendar";
 import { playSound } from "@/lib/sounds";
 import { PRIORITY_LABELS } from "@/lib/task-helpers";
@@ -89,6 +90,7 @@ export function SettingsView() {
           <ProfileSection onError={setToast} />
           <AppearanceSection settings={settings} save={save} />
           <TimerSection settings={settings} save={save} />
+          <PlanningSection settings={settings} save={save} />
           <NotificationSection settings={settings} save={save} />
           <TaskDefaultsSection settings={settings} save={save} onError={setToast} />
           <DataSection onError={setToast} onDone={reload} />
@@ -224,6 +226,39 @@ function AppearanceSection({ settings, save }: SectionProps) {
           );
         })}
       </div>
+    </Section>
+  );
+}
+
+/** Choices for the hours you have for tasks per day. */
+const WORKDAY_HOURS = [2, 3, 4, 5, 6, 7, 8, 9, 10, 12];
+
+/** How many hours a day you have for tasks (the Today page compares your plan with it). */
+function PlanningSection({ settings, save }: SectionProps) {
+  const ids = useId();
+  // Keep a value set some other way (e.g. a restored backup) in the list.
+  const options = [...new Set([...WORKDAY_HOURS.map((h) => h * 60), settings.workdayMinutes])].sort((a, b) => a - b);
+  return (
+    <Section
+      id="planning"
+      title="Planning"
+      description="Plan my day (the Today page) warns you when you plan more than this. Leave room for meetings, breaks and surprises."
+    >
+      <label htmlFor={`${ids}-workday`} className="mb-1 block text-sm font-medium">
+        Hours for tasks per day
+      </label>
+      <select
+        id={`${ids}-workday`}
+        value={settings.workdayMinutes}
+        onChange={(e) => save({ workdayMinutes: Number(e.target.value) })}
+        className={`${inputClass} w-full sm:w-60`}
+      >
+        {options.map((minutes) => (
+          <option key={minutes} value={minutes}>
+            {formatMinutes(minutes)}
+          </option>
+        ))}
+      </select>
     </Section>
   );
 }
