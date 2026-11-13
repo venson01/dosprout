@@ -83,7 +83,7 @@ backend/src/
                      Three layers: public auth routes; logged-in routes (teams); team routes
                      (tasks, goals, time, settings, backups) that read the X-Team-Id header.
   auth.ts            requireLogin / useTeam hooks (set request.user, request.team, request.stores),
-                     the session cookie, notOwner()
+                     the session cookie, cannotManage() (403 unless team.canManage)
   passwords.ts       hashPassword / verifyPassword (scrypt), newToken, hashToken (sha256)
   account-store.ts   AccountStore: users + sessions; createUser (also makes the personal team,
                      hands old team-less data to the first user, or adds example data)
@@ -470,7 +470,7 @@ Data model:
   Statements are split on `;`, so don't put `;` inside text values. The version lives in the
   `schema_version` table (older local databases used `PRAGMA user_version`, which is read once).
 - Keep SQL in the stores (`TaskStore`, `GoalStore`, `TimeStore`, `SettingsStore`, `BackupStore`,
-  `AccountStore`, `TeamStore`).
+  `AccountStore`, `TeamStore`, `OrganizationStore`).
   Keep route handlers thin. Validate every request body with a JSON schema.
 - Store methods are `async` (the database may be in the cloud), so `await` them.
   Writes that must happen together go in one `db.batch([...], "write")`, which is a transaction
