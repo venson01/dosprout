@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
-import type { BackupStore } from "../backup-store.js";
-import type { SettingsStore } from "../settings-store.js";
+import { notOwner } from "../auth.js";
+import type { TeamStore } from "../team-store.js";
 import {
   GOAL_COLORS,
   PRIORITIES,
@@ -95,6 +95,8 @@ const backupSchema = {
           updatedAt: timestamp,
           completedAt: nullableTimestamp,
           goalId: nullableId,
+          // Not in backups made before teams existed, so it isn't required.
+          assigneeId: nullableId,
           estimateMinutes: { type: ["integer", "null"], minimum: 1, maximum: 60000 },
           subtasks: {
             type: "array",
@@ -147,13 +149,14 @@ function brokenLink(backup: Backup): string | null {
   return null;
 }
 
-export async function settingsRoutes(
-  app: FastifyInstance,
-  opts: { settings: SettingsStore; backup: BackupStore },
-) {
-  const { settings, backup } = opts;
+/**
+ * Your settings (each person has their own), and backups of the current team
+ * (request.team): export, import and delete all.
+ */
+export async function settingsRoutes(app: FastifyInstance, opts: { teams: TeamStore }) {
+  const { teams } = opts;
 
-  app.get("/settings", async () => settings.get());
+  app.get("/settings", async (request) => request.stores.settings.get());
 
   app.patch<{ Body: UpdateSettingsInput }>(
     "/settings",
@@ -162,27 +165,30 @@ export async function settingsRoutes(
         body: { type: "object", minProperties: 1, additionalProperties: false, properties: settingsFields },
       },
     },
-    async (request) => settings.update(request.body),
+    async (request) => request.stores.settings.update(request.body),
   );
 
-  // Everything as one JSON object (the Settings page saves it as a backup file).
-  app.get("/export", async () => backup.export());
+  // The team's data as one JSON object (the Settings page saves it as a backup file).
+  app.get("/export", async (request) => request.stores.backup.export());
 
-  // Replaces ALL data with a backup. Backups can be big, so this route accepts up to 20 MB.
+  // Replaces ALL of the team's data with a backup. Backups can be big, so this route accepts up to 20 MB.
   app.post<{ Body: Backup }>(
     "/import",
     { bodyLimit: 20 * 1024 * 1024, schema: { body: backupSchema } },
     async (request, reply) => {
+      if (notOwner(request, reply, "Only the team's owner can replace its data with a backup.")) return reply;
       const problem = brokenLink(request.body);
       if (problem) return badRequest(reply, `This backup file is damaged: ${problem}`);
-      await backup.import(request.body);
+      const members = await teams.members(request.team.id);
+      await request.stores.backup.import(request.body, new Set(members.map((member) => member.id)));
       return { ok: true };
     },
   );
 
-  // Deletes every task, goal and time entry (settings stay).
-  app.delete("/data", async (_request, reply) => {
-    await backup.deleteAll();
+  // Deletes every task, goal and time entry in the team (settings stay).
+  app.delete("/data", async (request, reply) => {
+    if (notOwner(request, reply, "Only the team's owner can delete all of its data.")) return reply;
+    await request.stores.backup.deleteAll();
     return reply.code(204).send();
   });
 }

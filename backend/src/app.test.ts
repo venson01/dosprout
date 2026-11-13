@@ -4,34 +4,76 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, InjectOptions, LightMyRequestResponse } from "fastify";
 import { buildApp } from "./build-app.js";
 import { copyTasks, TargetNotEmptyError } from "./copy-tasks.js";
 import { openDatabase } from "./db.js";
+import { exampleDataStatements } from "./example-data.js";
 import { TaskStore } from "./task-store.js";
 import { GoalStore } from "./goal-store.js";
-import { DEFAULT_SETTINGS, type Backup, type Goal, type Settings, type Task, type TimeEntry } from "./types.js";
+import {
+  DEFAULT_SETTINGS,
+  type Backup,
+  type Goal,
+  type Invite,
+  type InvitePreview,
+  type Me,
+  type Member,
+  type MyWorkGroup,
+  type Settings,
+  type Task,
+  type TeamSummary,
+  type TimeEntry,
+} from "./types.js";
 
-// Every test gets a fresh, empty in-memory database.
+// Every test gets a fresh, empty in-memory database, with one account ("Ada") logged in.
 let app: FastifyInstance;
+// Ada's login cookie, sent by inject() below.
+let cookie: string;
 
 beforeEach(async () => {
   app = buildApp({ databaseUrl: ":memory:" });
+  cookie = (await signUp("Ada", "ada@example.com")).cookie;
 });
 
 afterEach(async () => {
   await app.close();
 });
 
+/** Like app.inject(), but logged in as Ada (pass other headers to act as someone else). */
+function inject(options: InjectOptions) {
+  return app.inject({ ...options, headers: { cookie, ...options.headers } });
+}
+
+/** "dosprout_session=abc" from a response's Set-Cookie header. */
+function cookieFrom(response: LightMyRequestResponse): string {
+  const header = response.headers["set-cookie"];
+  const first = Array.isArray(header) ? header[0] : String(header);
+  return first.split(";")[0];
+}
+
+const PASSWORD = "correct horse battery";
+
+/** Creates an account. Returns its login cookie and what the API says about it. */
+async function signUp(name: string, email: string, extra: Record<string, unknown> = {}) {
+  const response = await app.inject({
+    method: "POST",
+    url: "/api/auth/signup",
+    payload: { name, email, password: PASSWORD, ...extra },
+  });
+  assert.equal(response.statusCode, 201, response.body);
+  return { cookie: cookieFrom(response), me: response.json() as Me };
+}
+
 async function createTask(body: Record<string, unknown>): Promise<Task> {
-  const response = await app.inject({ method: "POST", url: "/api/tasks", payload: body });
+  const response = await inject({ method: "POST", url: "/api/tasks", payload: body });
   assert.equal(response.statusCode, 201, response.body);
   return response.json();
 }
 
 describe("tasks API", () => {
   test("health check responds", async () => {
-    const response = await app.inject({ method: "GET", url: "/api/health" });
+    const response = await inject({ method: "GET", url: "/api/health" });
     assert.deepEqual(response.json(), { ok: true });
   });
 
@@ -56,7 +98,7 @@ describe("tasks API", () => {
       subtasks: ["Design", "Build"],
     });
 
-    const response = await app.inject({ method: "GET", url: "/api/tasks" });
+    const response = await inject({ method: "GET", url: "/api/tasks" });
     const tasks: Task[] = response.json();
     assert.equal(tasks.length, 1);
     assert.equal(tasks[0].startAt, "2026-11-16T09:00:00.000Z");
@@ -79,7 +121,7 @@ describe("tasks API", () => {
       { title: "x", startAt: "2026-11-17T09:00" },
     ];
     for (const payload of cases) {
-      const response = await app.inject({ method: "POST", url: "/api/tasks", payload });
+      const response = await inject({ method: "POST", url: "/api/tasks", payload });
       assert.equal(response.statusCode, 400, JSON.stringify(payload));
     }
   });
@@ -100,7 +142,7 @@ describe("tasks API", () => {
   });
 
   test("rejects a due date before the start date", async () => {
-    const created = await app.inject({
+    const created = await inject({
       method: "POST",
       url: "/api/tasks",
       payload: { title: "x", startAt: "2026-11-17T12:00:00Z", dueAt: "2026-11-17T11:59:00Z" },
@@ -110,7 +152,7 @@ describe("tasks API", () => {
 
     // Also when only one of the two dates changes.
     const task = await createTask({ title: "y", startAt: "2026-11-17T12:00:00Z" });
-    const updated = await app.inject({
+    const updated = await inject({
       method: "PATCH",
       url: `/api/tasks/${task.id}`,
       payload: { dueAt: "2026-11-16T12:00:00Z" },
@@ -118,7 +160,7 @@ describe("tasks API", () => {
     assert.equal(updated.statusCode, 400);
 
     // Same start and due time is fine.
-    const same = await app.inject({
+    const same = await inject({
       method: "PATCH",
       url: `/api/tasks/${task.id}`,
       payload: { dueAt: "2026-11-17T12:00:00Z" },
@@ -130,7 +172,7 @@ describe("tasks API", () => {
     await createTask({ title: "Already done", status: "done" });
     const task = await createTask({ title: "Write report" });
 
-    const response = await app.inject({
+    const response = await inject({
       method: "PATCH",
       url: `/api/tasks/${task.id}`,
       payload: { status: "done", dueAt: null, title: "Write final report" },
@@ -148,23 +190,23 @@ describe("tasks API", () => {
       ["PATCH", "/api/tasks/999"],
       ["DELETE", "/api/tasks/999"],
     ] as const) {
-      const response = await app.inject({ method, url, payload: { title: "x" } });
+      const response = await inject({ method, url, payload: { title: "x" } });
       assert.equal(response.statusCode, 404, `${method} ${url}`);
     }
   });
 
   test("deletes a task together with its subtasks", async () => {
     const task = await createTask({ title: "Temp", subtasks: ["a"] });
-    const response = await app.inject({ method: "DELETE", url: `/api/tasks/${task.id}` });
+    const response = await inject({ method: "DELETE", url: `/api/tasks/${task.id}` });
     assert.equal(response.statusCode, 204);
-    const list = await app.inject({ method: "GET", url: "/api/tasks" });
+    const list = await inject({ method: "GET", url: "/api/tasks" });
     assert.deepEqual(list.json(), []);
   });
 
   test("adds, toggles, renames and deletes subtasks", async () => {
     const task = await createTask({ title: "Plan trip" });
 
-    const added = await app.inject({
+    const added = await inject({
       method: "POST",
       url: `/api/tasks/${task.id}/subtasks`,
       payload: { title: "Book flights" },
@@ -173,7 +215,7 @@ describe("tasks API", () => {
     const subtaskId = (added.json() as Task).subtasks[0].id;
     const subtaskUrl = `/api/tasks/${task.id}/subtasks/${subtaskId}`;
 
-    const toggled = await app.inject({
+    const toggled = await inject({
       method: "PATCH",
       url: subtaskUrl,
       payload: { done: true, title: "Book cheap flights" },
@@ -183,11 +225,11 @@ describe("tasks API", () => {
       [["Book cheap flights", true]],
     );
 
-    const deleted = await app.inject({ method: "DELETE", url: subtaskUrl });
+    const deleted = await inject({ method: "DELETE", url: subtaskUrl });
     assert.equal(deleted.statusCode, 200);
     assert.deepEqual((deleted.json() as Task).subtasks, []);
 
-    const missing = await app.inject({ method: "DELETE", url: subtaskUrl });
+    const missing = await inject({ method: "DELETE", url: subtaskUrl });
     assert.equal(missing.statusCode, 404);
   });
 
@@ -195,7 +237,7 @@ describe("tasks API", () => {
     const task = await createTask({ title: "Move house", subtasks: ["Pack", "Drive"] });
     const [pack, drive] = task.subtasks;
     const tick = async (subtaskId: number, done: boolean) => {
-      const response = await app.inject({
+      const response = await inject({
         method: "PATCH",
         url: `/api/tasks/${task.id}/subtasks/${subtaskId}`,
         payload: { done },
@@ -212,7 +254,7 @@ describe("tasks API", () => {
     // Adding an unfinished subtask to a finished task reopens it.
     await tick(pack.id, true);
     assert.equal(await tick(drive.id, true), "done");
-    const added = await app.inject({
+    const added = await inject({
       method: "POST",
       url: `/api/tasks/${task.id}/subtasks`,
       payload: { title: "Unpack" },
@@ -221,7 +263,7 @@ describe("tasks API", () => {
 
     // Deleting the only unfinished subtask finishes it.
     const unpack = (added.json() as Task).subtasks.at(-1)!;
-    const deleted = await app.inject({
+    const deleted = await inject({
       method: "DELETE",
       url: `/api/tasks/${task.id}/subtasks/${unpack.id}`,
     });
@@ -231,8 +273,8 @@ describe("tasks API", () => {
   test("unticking the only subtask of a done task moves it back to to do", async () => {
     const task = await createTask({ title: "Call mum", subtasks: ["Call"] });
     const url = `/api/tasks/${task.id}/subtasks/${task.subtasks[0].id}`;
-    await app.inject({ method: "PATCH", url, payload: { done: true } });
-    const response = await app.inject({ method: "PATCH", url, payload: { done: false } });
+    await inject({ method: "PATCH", url, payload: { done: true } });
+    const response = await inject({ method: "PATCH", url, payload: { done: false } });
     assert.equal((response.json() as Task).status, "todo");
   });
 
@@ -240,14 +282,14 @@ describe("tasks API", () => {
     const task = await createTask({ title: "Launch", subtasks: ["Build", "Ship"] });
     const url = `/api/tasks/${task.id}`;
 
-    const blocked = await app.inject({ method: "PATCH", url, payload: { status: "done" } });
+    const blocked = await inject({ method: "PATCH", url, payload: { status: "done" } });
     assert.equal(blocked.statusCode, 400);
     assert.match(blocked.json().message, /unfinished subtasks/);
-    const unchanged = await app.inject({ method: "GET", url });
+    const unchanged = await inject({ method: "GET", url });
     assert.equal((unchanged.json() as Task).status, "todo");
 
     // Creating it as done straight away is blocked too (new subtasks start unfinished)...
-    const created = await app.inject({
+    const created = await inject({
       method: "POST",
       url: "/api/tasks",
       payload: { title: "Too soon", status: "done", subtasks: ["Step"] },
@@ -258,10 +300,10 @@ describe("tasks API", () => {
 
     // Once every subtask is ticked it's done, and it can go back and forth after that.
     for (const subtask of task.subtasks) {
-      await app.inject({ method: "PATCH", url: `${url}/subtasks/${subtask.id}`, payload: { done: true } });
+      await inject({ method: "PATCH", url: `${url}/subtasks/${subtask.id}`, payload: { done: true } });
     }
-    await app.inject({ method: "PATCH", url, payload: { status: "in_progress" } });
-    const done = await app.inject({ method: "PATCH", url, payload: { status: "done" } });
+    await inject({ method: "PATCH", url, payload: { status: "in_progress" } });
+    const done = await inject({ method: "PATCH", url, payload: { status: "done" } });
     assert.equal(done.statusCode, 200);
   });
 
@@ -269,7 +311,7 @@ describe("tasks API", () => {
     const task = await createTask({ title: "Water plants" });
     assert.equal(task.completedAt, null);
     const patch = async (payload: object, url = `/api/tasks/${task.id}`) =>
-      (await app.inject({ method: "PATCH", url, payload })).json() as Task;
+      (await inject({ method: "PATCH", url, payload })).json() as Task;
 
     const done = await patch({ status: "done" });
     assert.ok(done.completedAt, "set when moved to done");
@@ -294,7 +336,7 @@ describe("tasks API", () => {
   test("a subtask can only be changed through its own task", async () => {
     const first = await createTask({ title: "First", subtasks: ["mine"] });
     const second = await createTask({ title: "Second" });
-    const response = await app.inject({
+    const response = await inject({
       method: "PATCH",
       url: `/api/tasks/${second.id}/subtasks/${first.subtasks[0].id}`,
       payload: { done: true },
@@ -305,7 +347,7 @@ describe("tasks API", () => {
 
 describe("goals API", () => {
   async function createGoal(body: Record<string, unknown>): Promise<Goal> {
-    const response = await app.inject({ method: "POST", url: "/api/goals", payload: body });
+    const response = await inject({ method: "POST", url: "/api/goals", payload: body });
     assert.equal(response.statusCode, 201, response.body);
     return response.json();
   }
@@ -317,14 +359,14 @@ describe("goals API", () => {
     assert.equal(goal.color, "blue");
     assert.equal(goal.targetDate, "2026-12-31");
 
-    const list = await app.inject({ method: "GET", url: "/api/goals" });
+    const list = await inject({ method: "GET", url: "/api/goals" });
     assert.deepEqual(
       (list.json() as Goal[]).map((g) => g.title),
       ["Get fit"],
     );
 
     const url = `/api/goals/${goal.id}`;
-    const updated = await app.inject({
+    const updated = await inject({
       method: "PATCH",
       url,
       payload: { color: "aqua", description: "Run 5k", targetDate: null },
@@ -335,9 +377,9 @@ describe("goals API", () => {
       ["aqua", "Run 5k", null],
     );
 
-    const deleted = await app.inject({ method: "DELETE", url });
+    const deleted = await inject({ method: "DELETE", url });
     assert.equal(deleted.statusCode, 204);
-    assert.equal((await app.inject({ method: "GET", url })).statusCode, 404);
+    assert.equal((await inject({ method: "GET", url })).statusCode, 404);
   });
 
   test("rejects invalid goals", async () => {
@@ -348,7 +390,7 @@ describe("goals API", () => {
       { title: "x", targetDate: "next week" },
       { title: "x", targetDate: "2026-12-31T10:00:00Z" },
     ]) {
-      const response = await app.inject({ method: "POST", url: "/api/goals", payload });
+      const response = await inject({ method: "POST", url: "/api/goals", payload });
       assert.equal(response.statusCode, 400, JSON.stringify(payload));
     }
   });
@@ -359,18 +401,18 @@ describe("goals API", () => {
     assert.equal(task.goalId, goal.id);
 
     // Unlink and link again with PATCH.
-    const unlinked = await app.inject({ method: "PATCH", url: `/api/tasks/${task.id}`, payload: { goalId: null } });
+    const unlinked = await inject({ method: "PATCH", url: `/api/tasks/${task.id}`, payload: { goalId: null } });
     assert.equal((unlinked.json() as Task).goalId, null);
-    await app.inject({ method: "PATCH", url: `/api/tasks/${task.id}`, payload: { goalId: goal.id } });
+    await inject({ method: "PATCH", url: `/api/tasks/${task.id}`, payload: { goalId: goal.id } });
 
-    await app.inject({ method: "DELETE", url: `/api/goals/${goal.id}` });
-    const after = await app.inject({ method: "GET", url: `/api/tasks/${task.id}` });
+    await inject({ method: "DELETE", url: `/api/goals/${goal.id}` });
+    const after = await inject({ method: "GET", url: `/api/tasks/${task.id}` });
     assert.equal(after.statusCode, 200, "the task still exists");
     assert.equal((after.json() as Task).goalId, null, "and no longer points at the deleted goal");
   });
 
   test("a task can't point at a goal that doesn't exist", async () => {
-    const created = await app.inject({
+    const created = await inject({
       method: "POST",
       url: "/api/tasks",
       payload: { title: "Orphan", goalId: 999 },
@@ -379,14 +421,14 @@ describe("goals API", () => {
     assert.match(created.json().message, /goal doesn't exist/);
 
     const task = await createTask({ title: "Plain" });
-    const patched = await app.inject({ method: "PATCH", url: `/api/tasks/${task.id}`, payload: { goalId: 999 } });
+    const patched = await inject({ method: "PATCH", url: `/api/tasks/${task.id}`, payload: { goalId: 999 } });
     assert.equal(patched.statusCode, 400);
   });
 });
 
 describe("time tracking API", () => {
   const post = async (url: string, payload?: object) =>
-    app.inject({ method: "POST", url, ...(payload ? { payload } : {}) });
+    inject({ method: "POST", url, ...(payload ? { payload } : {}) });
 
   test("starts and stops a timer; starting another stops the first", async () => {
     const task = await createTask({ title: "Write report" });
@@ -401,7 +443,7 @@ describe("time tracking API", () => {
     // A focus session on no task: the first timer gets stopped.
     const second = (await post("/api/time-entries/start", { kind: "focus" })).json() as TimeEntry;
     assert.equal(second.kind, "focus");
-    const list = (await app.inject({ method: "GET", url: "/api/time-entries" })).json() as TimeEntry[];
+    const list = (await inject({ method: "GET", url: "/api/time-entries" })).json() as TimeEntry[];
     assert.equal(list.filter((entry) => entry.endedAt === null).length, 1, "only one timer runs");
     assert.ok(list.find((entry) => entry.id === running.id)?.endedAt);
 
@@ -434,17 +476,17 @@ describe("time tracking API", () => {
     });
     assert.equal(backwards.statusCode, 400);
     const url = `/api/time-entries/${entry.id}`;
-    const badEdit = await app.inject({ method: "PATCH", url, payload: { endedAt: "2026-09-01T08:00:00Z" } });
+    const badEdit = await inject({ method: "PATCH", url, payload: { endedAt: "2026-09-01T08:00:00Z" } });
     assert.equal(badEdit.statusCode, 400);
 
-    const edited = await app.inject({ method: "PATCH", url, payload: { note: "Chapters 3-4", taskId: null } });
+    const edited = await inject({ method: "PATCH", url, payload: { note: "Chapters 3-4", taskId: null } });
     assert.deepEqual(
       [(edited.json() as TimeEntry).note, (edited.json() as TimeEntry).taskId],
       ["Chapters 3-4", null],
     );
 
-    assert.equal((await app.inject({ method: "DELETE", url })).statusCode, 204);
-    assert.equal((await app.inject({ method: "DELETE", url })).statusCode, 404);
+    assert.equal((await inject({ method: "DELETE", url })).statusCode, 204);
+    assert.equal((await inject({ method: "DELETE", url })).statusCode, 404);
   });
 
   test("time can only be tracked on tasks that exist, and goes when its task is deleted", async () => {
@@ -452,21 +494,21 @@ describe("time tracking API", () => {
 
     const task = await createTask({ title: "Temp" });
     await post("/api/time-entries/start", { taskId: task.id });
-    await app.inject({ method: "DELETE", url: `/api/tasks/${task.id}` });
-    const list = (await app.inject({ method: "GET", url: "/api/time-entries" })).json() as TimeEntry[];
+    await inject({ method: "DELETE", url: `/api/tasks/${task.id}` });
+    const list = (await inject({ method: "GET", url: "/api/time-entries" })).json() as TimeEntry[];
     assert.equal(list.length, 0);
   });
 
   test("tasks can have an estimate", async () => {
     const task = await createTask({ title: "Paint fence", estimateMinutes: 90 });
     assert.equal(task.estimateMinutes, 90);
-    const cleared = await app.inject({
+    const cleared = await inject({
       method: "PATCH",
       url: `/api/tasks/${task.id}`,
       payload: { estimateMinutes: null },
     });
     assert.equal((cleared.json() as Task).estimateMinutes, null);
-    const invalid = await app.inject({
+    const invalid = await inject({
       method: "PATCH",
       url: `/api/tasks/${task.id}`,
       payload: { estimateMinutes: 12.5 },
@@ -477,10 +519,10 @@ describe("time tracking API", () => {
 
 describe("settings and backups API", () => {
   test("settings start with defaults and can be changed one at a time", async () => {
-    const initial = (await app.inject({ method: "GET", url: "/api/settings" })).json() as Settings;
+    const initial = (await inject({ method: "GET", url: "/api/settings" })).json() as Settings;
     assert.deepEqual(initial, DEFAULT_SETTINGS);
 
-    const changed = await app.inject({
+    const changed = await inject({
       method: "PATCH",
       url: "/api/settings",
       payload: { theme: "dark", focusMinutes: 50, timerSounds: false, notifications: { dueSoon: false } },
@@ -494,7 +536,7 @@ describe("settings and backups API", () => {
     assert.deepEqual(settings.notifications, { started: true, dueSoon: false, done: true, focus: true });
     assert.equal(settings.breakMinutes, 5);
 
-    const again = (await app.inject({ method: "GET", url: "/api/settings" })).json() as Settings;
+    const again = (await inject({ method: "GET", url: "/api/settings" })).json() as Settings;
     assert.deepEqual(again, settings, "saved");
   });
 
@@ -508,34 +550,43 @@ describe("settings and backups API", () => {
       { defaultDueTime: "5pm" },
       { tagSuggestions: ["Work", "Work"] },
     ]) {
-      const response = await app.inject({ method: "PATCH", url: "/api/settings", payload });
+      const response = await inject({ method: "PATCH", url: "/api/settings", payload });
       assert.equal(response.statusCode, 400, JSON.stringify(payload));
     }
   });
 
   test("exports everything and imports it back exactly", async () => {
-    const goal = (await app.inject({ method: "POST", url: "/api/goals", payload: { title: "Ship it" } })).json() as Goal;
+    const goal = (await inject({ method: "POST", url: "/api/goals", payload: { title: "Ship it" } })).json() as Goal;
     const task = await createTask({ title: "Write docs", goalId: goal.id, subtasks: ["Intro"], estimateMinutes: 60 });
-    await app.inject({
+    await inject({
       method: "POST",
       url: "/api/time-entries",
       payload: { taskId: task.id, startedAt: "2026-09-01T09:00:00Z", endedAt: "2026-09-01T10:00:00Z" },
     });
-    await app.inject({ method: "PATCH", url: "/api/settings", payload: { weekStartsOn: 0 } });
+    await inject({ method: "PATCH", url: "/api/settings", payload: { weekStartsOn: 0 } });
 
-    const exported = (await app.inject({ method: "GET", url: "/api/export" })).json() as Backup;
+    const exported = (await inject({ method: "GET", url: "/api/export" })).json() as Backup;
     assert.equal(exported.app, "DoSprout");
     assert.equal(exported.tasks.length, 1);
 
     // Wipe everything, then restore it.
-    assert.equal((await app.inject({ method: "DELETE", url: "/api/data" })).statusCode, 204);
-    assert.deepEqual((await app.inject({ method: "GET", url: "/api/tasks" })).json(), []);
-    const imported = await app.inject({ method: "POST", url: "/api/import", payload: exported });
+    assert.equal((await inject({ method: "DELETE", url: "/api/data" })).statusCode, 204);
+    assert.deepEqual((await inject({ method: "GET", url: "/api/tasks" })).json(), []);
+    const imported = await inject({ method: "POST", url: "/api/import", payload: exported });
     assert.equal(imported.statusCode, 200, imported.body);
 
-    const again = (await app.inject({ method: "GET", url: "/api/export" })).json() as Backup;
-    const withoutTime = (backup: Backup) => ({ ...backup, exportedAt: undefined });
-    assert.deepEqual(withoutTime(again), withoutTime(exported));
+    // Everything is back, with new ids (other teams share the tables) and the links intact.
+    const again = (await inject({ method: "GET", url: "/api/export" })).json() as Backup;
+    assert.deepEqual(again.settings, exported.settings);
+    assert.equal(again.tasks.length, 1);
+    const [restored] = again.tasks;
+    assert.equal(restored.title, "Write docs");
+    assert.equal(restored.estimateMinutes, 60);
+    assert.deepEqual(restored.subtasks.map((s) => s.title), ["Intro"]);
+    assert.equal(again.goals.find((g) => g.id === restored.goalId)?.title, "Ship it");
+    assert.equal(again.timeEntries.length, 1);
+    assert.equal(again.timeEntries[0].taskId, restored.id);
+    assert.equal(again.timeEntries[0].startedAt, "2026-09-01T09:00:00.000Z");
   });
 
   test("refuses a damaged backup and changes nothing", async () => {
@@ -549,43 +600,46 @@ describe("settings and backups API", () => {
         { id: 1, taskId: 5, kind: "timer", startedAt: "2026-09-01T09:00:00Z", endedAt: null, note: "", createdAt: "2026-09-01T09:00:00Z" },
       ],
     };
-    const response = await app.inject({ method: "POST", url: "/api/import", payload: damaged });
+    const response = await inject({ method: "POST", url: "/api/import", payload: damaged });
     assert.equal(response.statusCode, 400);
     assert.match(response.json().message, /damaged/);
-    const notABackup = await app.inject({ method: "POST", url: "/api/import", payload: { hello: "world" } });
+    const notABackup = await inject({ method: "POST", url: "/api/import", payload: { hello: "world" } });
     assert.equal(notABackup.statusCode, 400);
 
-    const tasks = (await app.inject({ method: "GET", url: "/api/tasks" })).json() as Task[];
+    const tasks = (await inject({ method: "GET", url: "/api/tasks" })).json() as Task[];
     assert.deepEqual(tasks.map((t) => t.title), ["Keep me"]);
   });
 
   test("deleting all data keeps the settings", async () => {
     await createTask({ title: "Gone soon" });
-    await app.inject({ method: "PATCH", url: "/api/settings", payload: { theme: "light" } });
-    await app.inject({ method: "DELETE", url: "/api/data" });
-    assert.deepEqual((await app.inject({ method: "GET", url: "/api/tasks" })).json(), []);
-    assert.equal(((await app.inject({ method: "GET", url: "/api/settings" })).json() as Settings).theme, "light");
+    await inject({ method: "PATCH", url: "/api/settings", payload: { theme: "light" } });
+    await inject({ method: "DELETE", url: "/api/data" });
+    assert.deepEqual((await inject({ method: "GET", url: "/api/tasks" })).json(), []);
+    assert.equal(((await inject({ method: "GET", url: "/api/settings" })).json() as Settings).theme, "light");
   });
 });
 
 describe("copying tasks to another database", () => {
   test("copies every task and subtask exactly, and refuses to overwrite unless asked", async () => {
-    const from = await openDatabase({ url: ":memory:", seed: true });
-    const to = await openDatabase({ url: ":memory:", seed: true });
-    const fromStore = new TaskStore(from);
+    const from = await openDatabase({ url: ":memory:" });
+    const to = await openDatabase({ url: ":memory:" });
+    // Team 1 in the source gets the example data plus one more task.
+    await from.batch(exampleDataStatements(1, 1), "write");
+    const fromStore = new TaskStore(from, 1);
     await fromStore.create({ title: "Only in the source", subtasks: ["x"] });
 
-    // The target has the example tasks, so it isn't empty.
+    // The target has a task, so it isn't empty.
+    await new TaskStore(to, 1).create({ title: "Already in the target" });
     await assert.rejects(copyTasks(from, to), TargetNotEmptyError);
 
     const result = await copyTasks(from, to, { replace: true });
     assert.equal(result.tasks, 6);
-    const toStore = new TaskStore(to);
+    const toStore = new TaskStore(to, 1);
     assert.deepEqual(await toStore.list(), await fromStore.list());
     // Goals come along too (the example data has one, linked to three tasks).
     assert.equal(result.goals, 1);
     assert.equal(result.timeEntries, 3, "and the example tracked time");
-    assert.deepEqual(await new GoalStore(to).list(), await new GoalStore(from).list());
+    assert.deepEqual(await new GoalStore(to, 1).list(), await new GoalStore(from, 1).list());
 
     // New tasks in the target don't reuse the copied ids.
     const next = await toStore.create({ title: "After the copy" });
@@ -618,7 +672,7 @@ describe("database upgrade", () => {
       `);
       old.close();
 
-      const db = await openDatabase({ url: `file:${path}`, seed: true });
+      const db = await openDatabase({ url: `file:${path}` });
       const { rows } = await db.execute("SELECT title, start_at, due_at FROM tasks ORDER BY id");
       db.close();
 
@@ -638,5 +692,381 @@ describe("database upgrade", () => {
         // Ignore: Windows cleans up its temp folder by itself.
       }
     }
+  });
+});
+
+describe("accounts", () => {
+  test("signing up logs you in and gives you a personal team", async () => {
+    const me = (await inject({ method: "GET", url: "/api/auth/me" })).json() as Me;
+    assert.equal(me.user.name, "Ada");
+    assert.equal(me.user.email, "ada@example.com");
+    assert.equal("passwordHash" in me.user, false, "the password hash is never sent");
+    assert.deepEqual(
+      me.teams.map((t) => [t.name, t.personal, t.role]),
+      [["Personal", true, "owner"]],
+    );
+  });
+
+  test("everything except signing up and logging in needs a login", async () => {
+    for (const url of ["/api/tasks", "/api/goals", "/api/time-entries", "/api/settings", "/api/auth/me"]) {
+      const response = await app.inject({ method: "GET", url });
+      assert.equal(response.statusCode, 401, url);
+    }
+    const fake = await app.inject({ method: "GET", url: "/api/tasks", headers: { cookie: "dosprout_session=made-up" } });
+    assert.equal(fake.statusCode, 401);
+  });
+
+  test("checks sign-up details, and an email can only be used once", async () => {
+    for (const payload of [
+      { name: "X", email: "not-an-email", password: PASSWORD },
+      { name: "X", email: "x@example.com", password: "short" },
+      { name: " ", email: "x@example.com", password: PASSWORD },
+      { email: "x@example.com", password: PASSWORD },
+    ]) {
+      const response = await app.inject({ method: "POST", url: "/api/auth/signup", payload });
+      assert.equal(response.statusCode, 400, JSON.stringify(payload));
+    }
+    // Capitals and spaces don't make it a different address.
+    const again = await app.inject({
+      method: "POST",
+      url: "/api/auth/signup",
+      payload: { name: "Ada 2", email: " ADA@example.com ", password: PASSWORD },
+    });
+    assert.equal(again.statusCode, 409);
+  });
+
+  test("logs in with the right password only, and logs out", async () => {
+    const login = (password: string) =>
+      app.inject({ method: "POST", url: "/api/auth/login", payload: { email: "Ada@Example.com", password } });
+
+    const wrong = await login("wrong password");
+    assert.equal(wrong.statusCode, 401);
+    assert.equal(wrong.json().message, "Wrong email or password.");
+    assert.equal((await app.inject({
+      method: "POST", url: "/api/auth/login", payload: { email: "nobody@example.com", password: PASSWORD },
+    })).statusCode, 401);
+
+    const right = await login(PASSWORD);
+    assert.equal(right.statusCode, 200);
+    const session = cookieFrom(right);
+    assert.match(String(right.headers["set-cookie"]), /HttpOnly/);
+    const me = await app.inject({ method: "GET", url: "/api/auth/me", headers: { cookie: session } });
+    assert.equal((me.json() as Me).user.name, "Ada");
+
+    const logout = await app.inject({ method: "POST", url: "/api/auth/logout", headers: { cookie: session } });
+    assert.equal(logout.statusCode, 204);
+    const after = await app.inject({ method: "GET", url: "/api/auth/me", headers: { cookie: session } });
+    assert.equal(after.statusCode, 401, "the old login no longer works");
+  });
+
+  test("each person's personal tasks and settings are their own", async () => {
+    await createTask({ title: "Ada's secret" });
+    await inject({ method: "PATCH", url: "/api/settings", payload: { theme: "dark" } });
+
+    const bob = await signUp("Bob", "bob@example.com");
+    const asBob = (options: InjectOptions) =>
+      app.inject({ ...options, headers: { cookie: bob.cookie, ...options.headers } });
+    assert.deepEqual((await asBob({ method: "GET", url: "/api/tasks" })).json(), []);
+    assert.equal(((await asBob({ method: "GET", url: "/api/settings" })).json() as Settings).theme, "system");
+
+    // Bob can't reach Ada's task by its id either.
+    const [adaTask] = (await inject({ method: "GET", url: "/api/tasks" })).json() as Task[];
+    assert.equal((await asBob({ method: "GET", url: `/api/tasks/${adaTask.id}` })).statusCode, 404);
+    assert.equal((await asBob({ method: "DELETE", url: `/api/tasks/${adaTask.id}` })).statusCode, 404);
+    // ...or by asking for her personal team.
+    const adaTeam = (await inject({ method: "GET", url: "/api/auth/me" })).json() as Me;
+    const sneaky = await asBob({ method: "GET", url: "/api/tasks", headers: { "x-team-id": String(adaTeam.teams[0].id) } });
+    assert.equal(sneaky.statusCode, 404);
+  });
+
+  test("new accounts get example tasks when seeding is on", async () => {
+    const seeded = buildApp({ databaseUrl: ":memory:", seed: true });
+    try {
+      for (const email of ["one@example.com", "two@example.com"]) {
+        const signup = await seeded.inject({
+          method: "POST",
+          url: "/api/auth/signup",
+          payload: { name: "Someone", email, password: PASSWORD },
+        });
+        const headers = { cookie: cookieFrom(signup) };
+        const tasks = (await seeded.inject({ method: "GET", url: "/api/tasks", headers })).json() as Task[];
+        const goals = (await seeded.inject({ method: "GET", url: "/api/goals", headers })).json() as Goal[];
+        const time = (await seeded.inject({ method: "GET", url: "/api/time-entries", headers })).json() as TimeEntry[];
+        assert.equal(tasks.length, 5, email);
+        assert.equal(goals.length, 1);
+        assert.equal(tasks.filter((t) => t.goalId === goals[0].id).length, 3, "three tasks belong to the goal");
+        assert.equal(time.length, 3);
+        assert.ok(time.every((entry) => tasks.some((t) => t.id === entry.taskId)));
+        assert.equal(tasks.find((t) => t.title === "Do back exercises")?.subtasks.length, 3);
+      }
+    } finally {
+      await seeded.close();
+    }
+  });
+
+  test("the first person to sign up takes over the data from before accounts existed", async () => {
+    const folder = mkdtempSync(join(tmpdir(), "todo-test-"));
+    const url = `file:${join(folder, "old.db")}`;
+    try {
+      // Data made before accounts: no team, and the old shared settings row.
+      const db = await openDatabase({ url });
+      await db.batch(
+        [
+          "INSERT INTO goals (title) VALUES ('Old goal')",
+          "INSERT INTO tasks (title, goal_id) VALUES ('Old task', (SELECT MAX(id) FROM goals))",
+          "INSERT INTO time_entries (task_id, started_at, ended_at) VALUES ((SELECT MAX(id) FROM tasks), '2026-09-01T09:00:00.000Z', '2026-09-01T10:00:00.000Z')",
+          `INSERT INTO settings (id, data) VALUES (1, '{"theme":"dark"}')`,
+        ],
+        "write",
+      );
+      db.close();
+
+      const old = buildApp({ databaseUrl: url, seed: true });
+      try {
+        const first = await old.inject({ method: "POST", url: "/api/auth/signup", payload: { name: "First", email: "first@example.com", password: PASSWORD } });
+        const headers = { cookie: cookieFrom(first) };
+        const tasks = (await old.inject({ method: "GET", url: "/api/tasks", headers })).json() as Task[];
+        assert.deepEqual(tasks.map((t) => t.title), ["Old task"], "no examples: the old data is theirs");
+        assert.equal(((await old.inject({ method: "GET", url: "/api/goals", headers })).json() as Goal[]).length, 1);
+        assert.equal(((await old.inject({ method: "GET", url: "/api/time-entries", headers })).json() as TimeEntry[]).length, 1);
+        assert.equal(((await old.inject({ method: "GET", url: "/api/settings", headers })).json() as Settings).theme, "dark");
+
+        const second = await old.inject({ method: "POST", url: "/api/auth/signup", payload: { name: "Second", email: "second@example.com", password: PASSWORD } });
+        const secondHeaders = { cookie: cookieFrom(second) };
+        const theirs = (await old.inject({ method: "GET", url: "/api/tasks", headers: secondHeaders })).json() as Task[];
+        assert.ok(!theirs.some((t) => t.title === "Old task"), "the second person gets examples, not the old data");
+        assert.equal(((await old.inject({ method: "GET", url: "/api/settings", headers: secondHeaders })).json() as Settings).theme, "system");
+      } finally {
+        await old.close();
+      }
+    } finally {
+      try {
+        rmSync(folder, { recursive: true, force: true });
+      } catch {
+        // Windows keeps the file locked until the test process ends; it's in the temp folder anyway.
+      }
+    }
+  });
+});
+
+describe("teams", () => {
+  /** Ada creates a team; returns it. */
+  async function createTeam(name = "Marketing"): Promise<TeamSummary> {
+    const response = await inject({ method: "POST", url: "/api/teams", payload: { name } });
+    assert.equal(response.statusCode, 201, response.body);
+    return response.json();
+  }
+
+  /** Ada invites an email address to a team. */
+  async function invite(teamId: number, email: string): Promise<Invite> {
+    const response = await inject({ method: "POST", url: `/api/teams/${teamId}/invites`, payload: { email } });
+    assert.equal(response.statusCode, 201, response.body);
+    return response.json();
+  }
+
+  /** Ada creates a team and invites Bob, who signs up through the invite. */
+  async function teamWithBob() {
+    const team = await createTeam();
+    const { token } = await invite(team.id, "bob@example.com");
+    const bob = await signUp("Bob", "bob@example.com", { inviteToken: token });
+    const bobId = bob.me.user.id;
+    // Requests about the team send its id in the X-Team-Id header, like the website does.
+    const asAda = (options: InjectOptions) =>
+      inject({ ...options, headers: { "x-team-id": String(team.id), ...options.headers } });
+    const asBob = (options: InjectOptions) =>
+      app.inject({ ...options, headers: { cookie: bob.cookie, "x-team-id": String(team.id), ...options.headers } });
+    return { team, bob, bobId, asAda, asBob };
+  }
+
+  test("creating a team makes you its owner", async () => {
+    const team = await createTeam("  Marketing  ");
+    assert.deepEqual([team.name, team.personal, team.role], ["Marketing", false, "owner"]);
+    const me = (await inject({ method: "GET", url: "/api/auth/me" })).json() as Me;
+    assert.deepEqual(me.teams.map((t) => t.name), ["Personal", "Marketing"], "personal team first");
+  });
+
+  test("invites: preview the link, sign up with it and you're in the team", async () => {
+    const team = await createTeam();
+    const sent = await invite(team.id, " Bob@Example.com ");
+    assert.equal(sent.email, "bob@example.com");
+    assert.equal(sent.invitedBy, "Ada");
+
+    // Anyone with the link can see what it's for, without logging in.
+    const preview = await app.inject({ method: "GET", url: `/api/invites/${sent.token}` });
+    assert.deepEqual(
+      { ...(preview.json() as InvitePreview), expiresAt: undefined },
+      { teamName: "Marketing", email: "bob@example.com", invitedBy: "Ada", expiresAt: undefined },
+    );
+
+    // The invite only works for the address it was sent to.
+    const wrongPerson = await app.inject({
+      method: "POST",
+      url: "/api/auth/signup",
+      payload: { name: "Eve", email: "eve@example.com", password: PASSWORD, inviteToken: sent.token },
+    });
+    assert.equal(wrongPerson.statusCode, 400);
+    assert.match(wrongPerson.json().message, /bob@example.com/);
+
+    const bob = await signUp("Bob", "bob@example.com", { inviteToken: sent.token });
+    assert.deepEqual(bob.me.teams.map((t) => [t.name, t.role]), [["Personal", "owner"], ["Marketing", "member"]]);
+
+    // The link is used up.
+    assert.equal((await app.inject({ method: "GET", url: `/api/invites/${sent.token}` })).statusCode, 404);
+    const members = (await inject({ method: "GET", url: `/api/teams/${team.id}/members` })).json() as Member[];
+    assert.deepEqual(members.map((m) => [m.name, m.role]), [["Ada", "owner"], ["Bob", "member"]]);
+  });
+
+  test("someone who already has an account accepts an invite while logged in", async () => {
+    const team = await createTeam();
+    const bob = await signUp("Bob", "bob@example.com");
+    const eve = await signUp("Eve", "eve@example.com");
+    const { token } = await invite(team.id, "bob@example.com");
+
+    const asEve = await app.inject({ method: "POST", url: `/api/invites/${token}/accept`, headers: { cookie: eve.cookie } });
+    assert.equal(asEve.statusCode, 403, "Eve can't use Bob's invite");
+    const notLoggedIn = await app.inject({ method: "POST", url: `/api/invites/${token}/accept` });
+    assert.equal(notLoggedIn.statusCode, 401);
+
+    const accepted = await app.inject({ method: "POST", url: `/api/invites/${token}/accept`, headers: { cookie: bob.cookie } });
+    assert.equal(accepted.statusCode, 200, accepted.body);
+    assert.deepEqual((accepted.json() as TeamSummary).role, "member");
+  });
+
+  test("only the owner manages invites, and nobody shares a personal team", async () => {
+    const { team, asBob } = await teamWithBob();
+    const bobInvites = await asBob({ method: "POST", url: `/api/teams/${team.id}/invites`, payload: { email: "eve@example.com" } });
+    assert.equal(bobInvites.statusCode, 403);
+    assert.equal((await asBob({ method: "GET", url: `/api/teams/${team.id}/invites` })).statusCode, 403);
+
+    const already = await inject({ method: "POST", url: `/api/teams/${team.id}/invites`, payload: { email: "bob@example.com" } });
+    assert.equal(already.statusCode, 409, "Bob is already in");
+
+    const me = (await inject({ method: "GET", url: "/api/auth/me" })).json() as Me;
+    const personal = me.teams.find((t) => t.personal)!;
+    const sharePersonal = await inject({ method: "POST", url: `/api/teams/${personal.id}/invites`, payload: { email: "eve@example.com" } });
+    assert.equal(sharePersonal.statusCode, 400);
+
+    // Inviting the same address twice keeps one invite; it can be cancelled.
+    await invite(team.id, "eve@example.com");
+    const second = await invite(team.id, "eve@example.com");
+    const pending = (await inject({ method: "GET", url: `/api/teams/${team.id}/invites` })).json() as Invite[];
+    assert.deepEqual(pending.map((i) => i.id), [second.id]);
+    assert.equal((await inject({ method: "DELETE", url: `/api/teams/${team.id}/invites/${second.id}` })).statusCode, 204);
+    assert.equal((await app.inject({ method: "GET", url: `/api/invites/${second.token}` })).statusCode, 404);
+  });
+
+  test("team members share tasks and goals, and tasks can be assigned to them", async () => {
+    const { bobId, asAda, asBob } = await teamWithBob();
+
+    const goal = (await asAda({ method: "POST", url: "/api/goals", payload: { title: "Launch campaign" } })).json() as Goal;
+    const created = await asAda({
+      method: "POST",
+      url: "/api/tasks",
+      payload: { title: "Write the ad", goalId: goal.id, assigneeId: bobId },
+    });
+    assert.equal(created.statusCode, 201, created.body);
+    assert.equal((created.json() as Task).assigneeId, bobId);
+
+    // Bob sees the team's task and goal...
+    const bobTasks = (await asBob({ method: "GET", url: "/api/tasks" })).json() as Task[];
+    assert.deepEqual(bobTasks.map((t) => [t.title, t.assigneeId]), [["Write the ad", bobId]]);
+    assert.deepEqual(((await asBob({ method: "GET", url: "/api/goals" })).json() as Goal[]).map((g) => g.title), ["Launch campaign"]);
+    // ...but the team's tasks aren't in Ada's personal list.
+    assert.deepEqual((await inject({ method: "GET", url: "/api/tasks" })).json(), []);
+
+    // Only team members can be assigned, and goals must be the team's own.
+    const outsider = await signUp("Eve", "eve@example.com");
+    const task = created.json() as Task;
+    const assignEve = await asBob({ method: "PATCH", url: `/api/tasks/${task.id}`, payload: { assigneeId: outsider.me.user.id } });
+    assert.equal(assignEve.statusCode, 400);
+    const personalGoal = (await inject({ method: "POST", url: "/api/goals", payload: { title: "Ada's own" } })).json() as Goal;
+    const wrongGoal = await asBob({ method: "PATCH", url: `/api/tasks/${task.id}`, payload: { goalId: personalGoal.id } });
+    assert.equal(wrongGoal.statusCode, 400);
+    const unassign = await asBob({ method: "PATCH", url: `/api/tasks/${task.id}`, payload: { assigneeId: null } });
+    assert.equal((unassign.json() as Task).assigneeId, null);
+  });
+
+  test("tracked time is personal, even in a team", async () => {
+    const { asAda, asBob } = await teamWithBob();
+    const task = (await asAda({ method: "POST", url: "/api/tasks", payload: { title: "Shared" } })).json() as Task;
+
+    await asAda({ method: "POST", url: "/api/time-entries/start", payload: { taskId: task.id } });
+    await asBob({ method: "POST", url: "/api/time-entries/start", payload: { taskId: task.id } });
+    const adaTime = (await asAda({ method: "GET", url: "/api/time-entries" })).json() as TimeEntry[];
+    const bobTime = (await asBob({ method: "GET", url: "/api/time-entries" })).json() as TimeEntry[];
+    assert.equal(adaTime.length, 1);
+    assert.equal(bobTime.length, 1);
+    assert.equal(adaTime[0].endedAt, null, "Bob starting his timer doesn't stop Ada's");
+
+    // Bob can't change Ada's entry.
+    assert.equal((await asBob({ method: "DELETE", url: `/api/time-entries/${adaTime[0].id}` })).statusCode, 404);
+    // A new timer stops your own running one, even in another team.
+    await inject({ method: "POST", url: "/api/time-entries/start", payload: {} });
+    const adaAfter = (await asAda({ method: "GET", url: "/api/time-entries" })).json() as TimeEntry[];
+    assert.ok(adaAfter[0].endedAt);
+  });
+
+  test("members can leave, the owner can remove them, and their tasks become unassigned", async () => {
+    const { team, bobId, asAda, asBob } = await teamWithBob();
+    const task = (await asAda({ method: "POST", url: "/api/tasks", payload: { title: "Bob's job", assigneeId: bobId } })).json() as Task;
+
+    // Bob can't remove Ada, and Ada (the owner) can't leave.
+    const me = (await inject({ method: "GET", url: "/api/auth/me" })).json() as Me;
+    assert.equal((await asBob({ method: "DELETE", url: `/api/teams/${team.id}/members/${me.user.id}` })).statusCode, 403);
+    assert.equal((await asAda({ method: "DELETE", url: `/api/teams/${team.id}/members/${me.user.id}` })).statusCode, 400);
+
+    assert.equal((await asAda({ method: "DELETE", url: `/api/teams/${team.id}/members/${bobId}` })).statusCode, 204);
+    assert.equal(((await asAda({ method: "GET", url: `/api/tasks/${task.id}` })).json() as Task).assigneeId, null);
+    // Bob is out: the team's tasks are gone for him.
+    assert.equal((await asBob({ method: "GET", url: "/api/tasks" })).statusCode, 404);
+  });
+
+  test("only the owner renames or deletes a team, or replaces its data", async () => {
+    const { team, asAda, asBob } = await teamWithBob();
+    await asAda({ method: "POST", url: "/api/tasks", payload: { title: "Team task" } });
+
+    assert.equal((await asBob({ method: "PATCH", url: `/api/teams/${team.id}`, payload: { name: "Hijacked" } })).statusCode, 403);
+    assert.equal((await asBob({ method: "DELETE", url: "/api/data" })).statusCode, 403);
+    assert.equal((await asBob({ method: "DELETE", url: `/api/teams/${team.id}` })).statusCode, 403);
+
+    const renamed = await asAda({ method: "PATCH", url: `/api/teams/${team.id}`, payload: { name: "Growth" } });
+    assert.equal((renamed.json() as TeamSummary).name, "Growth");
+
+    assert.equal((await asAda({ method: "DELETE", url: `/api/teams/${team.id}` })).statusCode, 204);
+    const me = (await inject({ method: "GET", url: "/api/auth/me" })).json() as Me;
+    assert.deepEqual(me.teams.map((t) => t.name), ["Personal"]);
+    assert.equal((await asBob({ method: "GET", url: "/api/tasks" })).statusCode, 404);
+  });
+
+  test("my work: your personal tasks plus what's assigned to you in every team", async () => {
+    const { team, bobId, asAda, asBob } = await teamWithBob();
+    const me = (await inject({ method: "GET", url: "/api/auth/me" })).json() as Me;
+    const adaId = me.user.id;
+
+    await createTask({ title: "Ada's personal task" });
+    const goal = (await asAda({ method: "POST", url: "/api/goals", payload: { title: "Launch" } })).json() as Goal;
+    await asAda({ method: "POST", url: "/api/tasks", payload: { title: "For Ada", assigneeId: adaId, goalId: goal.id } });
+    await asAda({ method: "POST", url: "/api/tasks", payload: { title: "For Bob", assigneeId: bobId } });
+    await asAda({ method: "POST", url: "/api/tasks", payload: { title: "Nobody's" } });
+
+    const response = await inject({ method: "GET", url: "/api/my-work" });
+    assert.equal(response.statusCode, 200, response.body);
+    const groups = response.json() as MyWorkGroup[];
+    assert.deepEqual(
+      groups.map((g) => [g.team.name, g.tasks.map((t) => t.title)]),
+      [
+        ["Personal", ["Ada's personal task"]],
+        ["Marketing", ["For Ada"]],
+      ],
+    );
+    // The team's goals come along, so the page can show the task's goal.
+    assert.deepEqual(groups[1].goals.map((g) => g.title), ["Launch"]);
+    assert.equal(groups[1].team.id, team.id);
+
+    // Bob only gets his own: his (empty) personal team and "For Bob".
+    const bobs = (await asBob({ method: "GET", url: "/api/my-work" })).json() as MyWorkGroup[];
+    assert.deepEqual(bobs.map((g) => g.tasks.map((t) => t.title)), [[], ["For Bob"]]);
+
+    assert.equal((await app.inject({ method: "GET", url: "/api/my-work" })).statusCode, 401);
   });
 });

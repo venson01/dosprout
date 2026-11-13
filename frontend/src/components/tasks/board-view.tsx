@@ -19,7 +19,8 @@ import { useRef, useState } from "react";
 import { useTaskList } from "@/hooks/tasks-context";
 import { isOverdue, STATUS_LABELS } from "@/lib/task-helpers";
 import { STATUSES, type Status, type Task } from "@/lib/types";
-import { GoalBadge, OverdueBadge, PriorityBadge, TagBadge, TaskDate } from "./badges";
+import { useAuth } from "@/hooks/auth-context";
+import { AssigneeBadge, GoalBadge, OverdueBadge, PriorityBadge, TagBadge, TaskDate } from "./badges";
 import type { TaskActions, TaskGroups } from "./task-actions";
 import { TaskMenu } from "./task-menu";
 import { TimeBadge } from "./time-badge";
@@ -213,8 +214,10 @@ function CardBody({
   menu?: React.ReactNode;
   className?: string;
 }) {
-  const { goals } = useTaskList();
+  const { goals, members } = useTaskList();
+  const { user } = useAuth();
   const goal = goals.find((g) => g.id === task.goalId);
+  const assignee = members.find((m) => m.id === task.assigneeId);
   const total = task.subtasks.length;
   const finished = task.subtasks.filter((s) => s.done).length;
   const percent = total === 0 ? 0 : Math.round((finished / total) * 100);
@@ -235,8 +238,9 @@ function CardBody({
         </h3>
         {menu}
       </div>
-      {/* "empty:hidden" hides the line when there's no goal and no tracked time. */}
+      {/* "empty:hidden" hides the line when there's no assignee, goal or tracked time. */}
       <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 empty:hidden">
+        {assignee && <AssigneeBadge member={assignee} isYou={assignee.id === user.id} />}
         {goal && <GoalBadge goal={goal} />}
         <TimeBadge task={task} />
       </div>

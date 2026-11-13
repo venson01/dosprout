@@ -42,6 +42,8 @@ export interface Task {
   goalId: number | null;
   /** How long the task should take, in minutes, or null. Compared with the tracked time. */
   estimateMinutes: number | null;
+  /** The team member (user id) the task is assigned to, or null. */
+  assigneeId: number | null;
   subtasks: Subtask[];
 }
 
@@ -55,6 +57,7 @@ export interface CreateTaskInput {
   dueAt?: string | null;
   goalId?: number | null;
   estimateMinutes?: number | null;
+  assigneeId?: number | null;
   /** Titles of subtasks to create together with the task. */
   subtasks?: string[];
 }
@@ -137,7 +140,7 @@ export interface UpdateTimeEntryInput {
 export const THEMES = ["system", "light", "dark"] as const;
 export type Theme = (typeof THEMES)[number];
 
-/** The app's settings (one set for everyone, since there are no accounts yet). */
+/** One person's settings (each account has its own). */
 export interface Settings {
   /** "system" follows the device's light / dark setting. */
   theme: Theme;
@@ -175,7 +178,7 @@ export const DEFAULT_SETTINGS: Settings = {
   tagSuggestions: ["Work", "Health", "Personal", "Study", "Home"],
 };
 
-/** Everything in one object: what GET /export returns and POST /import accepts. */
+/** Everything in one team (plus your own settings and tracked time): what GET /export returns and POST /import accepts. */
 export interface Backup {
   app: "DoSprout";
   version: 1;
@@ -184,4 +187,88 @@ export interface Backup {
   goals: Goal[];
   tasks: Task[];
   timeEntries: TimeEntry[];
+}
+
+// ---- Accounts and teams ----
+
+/** Someone with an account. The password is never sent. */
+export interface User {
+  id: number;
+  email: string;
+  name: string;
+  createdAt: string;
+}
+
+/** "owner" can rename / delete the team and invite / remove people; "member" can work in it. */
+export const TEAM_ROLES = ["owner", "member"] as const;
+export type TeamRole = (typeof TEAM_ROLES)[number];
+
+/** A team as one of its members sees it. */
+export interface TeamSummary {
+  id: number;
+  name: string;
+  /** Everyone has exactly one personal team: their private space, with only them in it. */
+  personal: boolean;
+  /** Your role in this team. */
+  role: TeamRole;
+}
+
+/** Who is logged in, and the teams they can switch between (personal team first). */
+export interface Me {
+  user: User;
+  teams: TeamSummary[];
+}
+
+/** Someone in a team. */
+export interface Member {
+  /** The user's id (what task.assigneeId points at). */
+  id: number;
+  name: string;
+  email: string;
+  role: TeamRole;
+  joinedAt: string;
+}
+
+/** An invitation to join a team, waiting to be accepted. The link is /invite/<token>. */
+export interface Invite {
+  id: number;
+  teamId: number;
+  email: string;
+  token: string;
+  /** The name of the person who sent it. */
+  invitedBy: string;
+  createdAt: string;
+  expiresAt: string;
+}
+
+/** What anyone with an invite link may see before joining (GET /invites/:token). */
+export interface InvitePreview {
+  teamName: string;
+  email: string;
+  invitedBy: string;
+  expiresAt: string;
+}
+
+/**
+ * One team's part of "My work" (GET /my-work): the tasks on your plate there (in your
+ * personal team: all of them; in other teams: the ones assigned to you), and the team's
+ * goals so the tasks can show which goal they belong to.
+ */
+export interface MyWorkGroup {
+  team: TeamSummary;
+  tasks: Task[];
+  goals: Goal[];
+}
+
+export interface SignupInput {
+  name: string;
+  email: string;
+  password: string;
+  /** From an invite link: join that team right away. */
+  inviteToken?: string;
+}
+
+export interface LoginInput {
+  email: string;
+  password: string;
 }

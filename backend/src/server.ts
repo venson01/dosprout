@@ -23,6 +23,8 @@ const app = buildApp({
   databaseUrl,
   databaseAuthToken,
   seed: true,
+  // On Vercel the site is HTTPS, so the login cookie can be HTTPS-only.
+  secureCookies: Boolean(process.env.VERCEL),
   corsOrigin,
   logger: { level: process.env.LOG_LEVEL ?? "info" },
 });

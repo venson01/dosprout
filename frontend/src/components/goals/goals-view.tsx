@@ -4,6 +4,7 @@ import { CalendarDays, Check, Circle, CircleCheck, Pencil, Plus, Target } from "
 import { useCallback, useState } from "react";
 import { ErrorToast, LoadError, LoadingSkeleton } from "@/components/tasks/feedback";
 import { TaskDialog } from "@/components/tasks/task-dialog";
+import { useAuth } from "@/hooks/auth-context";
 import { useTaskList } from "@/hooks/tasks-context";
 import { GOAL_COLOR_CLASSES, goalProgress, sortGoals, targetStatus } from "@/lib/goals";
 import { formatDateTime } from "@/lib/task-helpers";
@@ -20,6 +21,8 @@ type TaskEditorState = { task: Task | null; goalId?: number } | null;
 export function GoalsView() {
   const { tasks, goals, loadState, loadError, reload, saveTask, deleteTask, saveGoal, deleteGoal, now } =
     useTaskList();
+  // In a team, these are the team's goals: everyone in it sees and works on them.
+  const { team } = useAuth();
   // undefined = closed, null = creating a new goal.
   const [editingGoal, setEditingGoal] = useState<Goal | null | undefined>(undefined);
   const [taskEditor, setTaskEditor] = useState<TaskEditorState>(null);
@@ -47,7 +50,7 @@ export function GoalsView() {
     <div className="mx-auto max-w-6xl">
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <div>
-          <h1 className="text-2xl font-semibold">Goals</h1>
+          <h1 className="break-words text-2xl font-semibold">{team.personal ? "Goals" : `${team.name} goals`}</h1>
           {loadState === "ready" && goals.length > 0 && (
             <p className="text-sm text-muted">
               {goals.length} {goals.length === 1 ? "goal" : "goals"} · {reached} reached

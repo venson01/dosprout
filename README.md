@@ -38,8 +38,14 @@ deployed on Vercel). The design is based on [moodboard/inspo.png](moodboard/insp
 - Search, and sorting by start date, due date or priority.
 - Works on phones, tablets and desktops.
 
-> The app has no login yet, so everyone who uses the same backend shares one task list,
-> including everyone who opens the live version.
+- **Accounts and teams**: sign up with an email and password. Everyone gets a private
+  personal space, and can create **teams**: invite people with a link, share tasks, goals and
+  a calendar, assign tasks to team members, and filter to "Assigned to me".
+- **My work**: everything on your plate across all your teams on one page, grouped by when
+  it's due (overdue, today, this week...), with a filter per team.
+
+> Upgrading an older copy that had no accounts? The **first person to sign up** takes over
+> all the existing tasks, goals, tracked time and settings. Sign up yourself first.
 
 ## What you need
 

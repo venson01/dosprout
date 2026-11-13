@@ -11,6 +11,7 @@ import type {
 // Rows exactly as SQLite returns them (snake_case columns, 0/1 for booleans).
 interface TaskRow {
   id: number;
+  team_id: number;
   title: string;
   description: string;
   status: Task["status"];
@@ -24,6 +25,7 @@ interface TaskRow {
   completed_at: string | null;
   goal_id: number | null;
   estimate_minutes: number | null;
+  assignee_id: number | null;
 }
 
 interface SubtaskRow {
@@ -60,6 +62,7 @@ function toTask(row: TaskRow, subtasks: Subtask[]): Task {
     completedAt: row.completed_at,
     goalId: row.goal_id,
     estimateMinutes: row.estimate_minutes,
+    assigneeId: row.assignee_id,
     subtasks,
   };
 }
@@ -100,8 +103,8 @@ export function hasUnfinishedSubtasks(task: Pick<Task, "subtasks">): boolean {
 // SQL snippets used in several queries below.
 // The current time as a UTC timestamp, e.g. "2026-11-17T16:00:00.000Z".
 export const NOW = "strftime('%Y-%m-%dT%H:%M:%fZ', 'now')";
-// The bottom of a status column. Needs the status as its "?" argument.
-const NEXT_TASK_POSITION = "(SELECT COALESCE(MAX(position), -1) + 1 FROM tasks WHERE status = ?)";
+// The bottom of a status column in a team. Needs the status and the team id as its "?" arguments.
+const NEXT_TASK_POSITION = "(SELECT COALESCE(MAX(position), -1) + 1 FROM tasks WHERE status = ? AND team_id = ?)";
 
 // Maps API field names to database column names for fields that can be updated.
 const UPDATABLE_TASK_COLUMNS = {
@@ -114,20 +117,69 @@ const UPDATABLE_TASK_COLUMNS = {
   dueAt: "due_at",
   goalId: "goal_id",
   estimateMinutes: "estimate_minutes",
+  assigneeId: "assignee_id",
   position: "position",
 } as const satisfies Record<keyof UpdateTaskInput, string>;
+
+/**
+ * "My work": the tasks on one person's plate in ALL their teams. That's everything in
+ * their personal team, plus the tasks assigned to them in their other teams.
+ * Returns them grouped by team id. (Only teams they're still in count.)
+ */
+export async function tasksForPerson(db: Client, userId: number): Promise<Map<number, Task[]>> {
+  const mine = `
+    SELECT tasks.id FROM tasks
+    JOIN team_members ON team_members.team_id = tasks.team_id AND team_members.user_id = ?
+    JOIN teams ON teams.id = tasks.team_id
+    WHERE teams.personal = 1 OR tasks.assignee_id = ?`;
+  const [taskResult, subtaskResult] = await db.batch(
+    [
+      { sql: `SELECT * FROM tasks WHERE id IN (${mine}) ORDER BY position, id`, args: [userId, userId] },
+      { sql: `SELECT * FROM subtasks WHERE task_id IN (${mine}) ORDER BY position, id`, args: [userId, userId] },
+    ],
+    "read",
+  );
+
+  const subtasksByTask = new Map<number, Subtask[]>();
+  for (const row of subtaskResult.rows as unknown as SubtaskRow[]) {
+    const list = subtasksByTask.get(row.task_id) ?? [];
+    list.push(toSubtask(row));
+    subtasksByTask.set(row.task_id, list);
+  }
+  const byTeam = new Map<number, Task[]>();
+  for (const row of taskResult.rows as unknown as TaskRow[]) {
+    const list = byTeam.get(row.team_id) ?? [];
+    list.push(toTask(row, subtasksByTask.get(row.id) ?? []));
+    byTeam.set(row.team_id, list);
+  }
+  return byTeam;
+}
 
 /**
  * All database reads and writes for tasks live here, so routes stay small.
  * Every method is async because the database may be in the cloud (Turso),
  * so each query has to wait for an answer.
+ *
+ * A TaskStore only sees ONE team's tasks (the teamId it was made with): every query
+ * includes "team_id = ?". Routes make a new one for each request, for the team the
+ * request is about, so nobody can read or change another team's tasks.
  */
 export class TaskStore {
-  constructor(private readonly db: Client) {}
+  constructor(
+    private readonly db: Client,
+    private readonly teamId: number,
+  ) {}
 
   async list(): Promise<Task[]> {
     const [taskResult, subtaskResult] = await this.db.batch(
-      ["SELECT * FROM tasks ORDER BY position, id", "SELECT * FROM subtasks ORDER BY position, id"],
+      [
+        { sql: "SELECT * FROM tasks WHERE team_id = ? ORDER BY position, id", args: [this.teamId] },
+        {
+          sql: `SELECT * FROM subtasks WHERE task_id IN (SELECT id FROM tasks WHERE team_id = ?)
+                ORDER BY position, id`,
+          args: [this.teamId],
+        },
+      ],
       "read",
     );
     const rows = taskResult.rows as unknown as TaskRow[];
@@ -145,7 +197,7 @@ export class TaskStore {
   async get(id: number): Promise<Task | undefined> {
     const [taskResult, subtaskResult] = await this.db.batch(
       [
-        { sql: "SELECT * FROM tasks WHERE id = ?", args: [id] },
+        { sql: "SELECT * FROM tasks WHERE id = ? AND team_id = ?", args: [id, this.teamId] },
         { sql: "SELECT * FROM subtasks WHERE task_id = ? ORDER BY position, id", args: [id] },
       ],
       "read",
@@ -164,9 +216,11 @@ export class TaskStore {
     const [taskResult] = await this.db.batch(
       [
         {
-          sql: `INSERT INTO tasks (title, description, status, priority, tag, start_at, due_at, goal_id, estimate_minutes, position, completed_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ${NEXT_TASK_POSITION}, ${status === "done" ? NOW : "NULL"})`,
+          sql: `INSERT INTO tasks (team_id, title, description, status, priority, tag, start_at, due_at, goal_id,
+                  estimate_minutes, assignee_id, position, completed_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${NEXT_TASK_POSITION}, ${status === "done" ? NOW : "NULL"})`,
           args: [
+            this.teamId,
             input.title.trim(),
             input.description?.trim() ?? "",
             status,
@@ -176,7 +230,9 @@ export class TaskStore {
             toUtcTimestamp(input.dueAt ?? null),
             input.goalId ?? null,
             input.estimateMinutes ?? null,
+            input.assigneeId ?? null,
             status,
+            this.teamId,
           ],
         },
         ...(input.subtasks ?? []).map((title, position) => ({
@@ -211,7 +267,7 @@ export class TaskStore {
       // Moving a task to another column without a position puts it at the bottom.
       if (input.position === undefined) {
         assignments.push(`position = ${NEXT_TASK_POSITION}`);
-        args.push(input.status);
+        args.push(input.status, this.teamId);
       }
       // Remember when it was finished; forget it again if it's reopened.
       assignments.push(`completed_at = ${input.status === "done" ? NOW : "NULL"}`);
@@ -221,8 +277,8 @@ export class TaskStore {
       await this.db.execute({
         sql: `UPDATE tasks
               SET ${assignments.join(", ")}, updated_at = ${NOW}
-              WHERE id = ?`,
-        args: [...args, id],
+              WHERE id = ? AND team_id = ?`,
+        args: [...args, id, this.teamId],
       });
     }
     return this.get(id);
@@ -232,11 +288,13 @@ export class TaskStore {
   async delete(id: number): Promise<boolean> {
     // Delete the subtasks ourselves rather than relying on ON DELETE CASCADE,
     // because that only works when SQLite's foreign key checks are switched on.
+    // The "IN (SELECT ...)" parts make sure the task really is in this team.
+    const thisTeamsTask = "(SELECT id FROM tasks WHERE id = ? AND team_id = ?)";
     const [, , taskResult] = await this.db.batch(
       [
-        { sql: "DELETE FROM subtasks WHERE task_id = ?", args: [id] },
-        { sql: "DELETE FROM time_entries WHERE task_id = ?", args: [id] },
-        { sql: "DELETE FROM tasks WHERE id = ?", args: [id] },
+        { sql: `DELETE FROM subtasks WHERE task_id IN ${thisTeamsTask}`, args: [id, this.teamId] },
+        { sql: `DELETE FROM time_entries WHERE task_id IN ${thisTeamsTask}`, args: [id, this.teamId] },
+        { sql: "DELETE FROM tasks WHERE id = ? AND team_id = ?", args: [id, this.teamId] },
       ],
       "write",
     );
@@ -263,12 +321,13 @@ export class TaskStore {
     const { rowsAffected } = await this.db.execute({
       sql: `UPDATE subtasks
             SET title = COALESCE(?, title), done = COALESCE(?, done)
-            WHERE id = ? AND task_id = ?`,
+            WHERE id = ? AND task_id = ? AND task_id IN (SELECT id FROM tasks WHERE team_id = ?)`,
       args: [
         input.title?.trim() ?? null,
         input.done === undefined ? null : Number(input.done),
         subtaskId,
         taskId,
+        this.teamId,
       ],
     });
     if (rowsAffected === 0) return undefined;
@@ -278,8 +337,9 @@ export class TaskStore {
   /** Returns the parent task, or undefined if the task or subtask doesn't exist. */
   async deleteSubtask(taskId: number, subtaskId: number): Promise<Task | undefined> {
     const { rowsAffected } = await this.db.execute({
-      sql: "DELETE FROM subtasks WHERE id = ? AND task_id = ?",
-      args: [subtaskId, taskId],
+      sql: `DELETE FROM subtasks
+            WHERE id = ? AND task_id = ? AND task_id IN (SELECT id FROM tasks WHERE team_id = ?)`,
+      args: [subtaskId, taskId, this.teamId],
     });
     if (rowsAffected === 0) return undefined;
     return this.syncStatusWithSubtasks(taskId);
@@ -294,8 +354,8 @@ export class TaskStore {
     const status = statusFromSubtasks(task.status, task.subtasks);
     if (status !== task.status) return this.update(taskId, { status });
     await this.db.execute({
-      sql: `UPDATE tasks SET updated_at = ${NOW} WHERE id = ?`,
-      args: [taskId],
+      sql: `UPDATE tasks SET updated_at = ${NOW} WHERE id = ? AND team_id = ?`,
+      args: [taskId, this.teamId],
     });
     return this.get(taskId);
   }

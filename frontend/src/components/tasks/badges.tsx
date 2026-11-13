@@ -1,7 +1,8 @@
 import { AlarmClock, CalendarClock, CalendarDays, Flag } from "lucide-react";
 import { formatDateTime, isOverdue, PRIORITY_LABELS } from "@/lib/task-helpers";
+import { Avatar } from "@/components/layout/avatar";
 import { GOAL_COLOR_CLASSES } from "@/lib/goals";
-import type { Goal, Priority, Task } from "@/lib/types";
+import type { Goal, Member, Priority, Task } from "@/lib/types";
 
 const PRIORITY_STYLES: Record<Priority, string> = {
   high: "bg-high-bg text-high",
@@ -37,6 +38,18 @@ export function GoalBadge({ goal }: { goal: Goal }) {
       <span aria-hidden className={`size-2 shrink-0 rounded-full ${GOAL_COLOR_CLASSES[goal.color].fill}`} />
       <span className="sr-only">Goal: </span>
       <span className="truncate">{goal.title}</span>
+    </span>
+  );
+}
+
+/** Who a task is assigned to: their initials and first name ("you" for yourself). */
+export function AssigneeBadge({ member, isYou }: { member: Member; isYou: boolean }) {
+  const label = isYou ? "You" : member.name.split(/\s+/)[0];
+  return (
+    <span className="inline-flex max-w-32 items-center gap-1 text-xs text-muted" title={`Assigned to ${member.name}`}>
+      <Avatar name={member.name} size="sm" />
+      <span className="sr-only">Assigned to: </span>
+      <span className="truncate">{label}</span>
     </span>
   );
 }

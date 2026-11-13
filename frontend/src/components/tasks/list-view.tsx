@@ -5,7 +5,8 @@ import { useState } from "react";
 import { useTaskList } from "@/hooks/tasks-context";
 import { hasUnfinishedSubtasks, isOverdue, STATUS_LABELS } from "@/lib/task-helpers";
 import { STATUSES, type Status, type Task } from "@/lib/types";
-import { GoalBadge, OverdueBadge, PriorityBadge, TagBadge, TaskDate } from "./badges";
+import { useAuth } from "@/hooks/auth-context";
+import { AssigneeBadge, GoalBadge, OverdueBadge, PriorityBadge, TagBadge, TaskDate } from "./badges";
 import type { TaskActions, TaskGroups } from "./task-actions";
 import { TaskMenu } from "./task-menu";
 import { TimeBadge } from "./time-badge";
@@ -97,8 +98,10 @@ function TaskRow({ task, actions }: { task: Task; actions: TaskActions }) {
   // Can't be ticked until every subtask is (clicking it explains why).
   const blocked = !done && hasUnfinishedSubtasks(task);
   const overdue = isOverdue(task);
-  const { goals } = useTaskList();
+  const { goals, members } = useTaskList();
+  const { user } = useAuth();
   const goal = goals.find((g) => g.id === task.goalId);
+  const assignee = members.find((m) => m.id === task.assigneeId);
   const finished = task.subtasks.filter((s) => s.done).length;
 
   return (
@@ -148,6 +151,7 @@ function TaskRow({ task, actions }: { task: Task; actions: TaskActions }) {
                 {finished}/{task.subtasks.length} subtasks
               </span>
             )}
+            {assignee && <AssigneeBadge member={assignee} isYou={assignee.id === user.id} />}
             {goal && <GoalBadge goal={goal} />}
             <TimeBadge task={task} />
           </p>

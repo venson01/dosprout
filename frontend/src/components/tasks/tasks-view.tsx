@@ -1,8 +1,9 @@
 "use client";
 
-import { ArrowUpDown, Check, Plus, X } from "lucide-react";
+import { ArrowUpDown, Check, Plus, UserRound, X } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useMemo, useRef, useState } from "react";
+import { useAuth } from "@/hooks/auth-context";
 import { useDismiss } from "@/hooks/use-dismiss";
 import { useTaskList } from "@/hooks/tasks-context";
 import {
@@ -29,23 +30,37 @@ export function TasksView() {
   const searchParams = useSearchParams();
   const query = searchParams.get("q") ?? "";
   const view: View = searchParams.get("view") === "board" ? "board" : "list";
+  const { user, team } = useAuth();
+  // In a team: show only the tasks assigned to you (?mine=1).
+  const onlyMine = !team.personal && searchParams.get("mine") === "1";
 
   const { tasks, loadState, loadError, reload, updateTask, deleteTask, saveTask } = useTaskList();
   const [sortMode, setSortMode] = useState<SortMode>("manual");
   const [editor, setEditor] = useState<EditorState>(null);
+
+  // ?open=<id> opens that task's editor once the tasks have loaded (the "My work" page links
+  // here). Done while rendering, the way React suggests for "adjusting state when something
+  // changes"; openedId makes sure it happens only once per id.
+  const openId = Number(searchParams.get("open")) || null;
+  const [openedId, setOpenedId] = useState<number | null>(null);
+  if (openId !== null && openId !== openedId && loadState === "ready") {
+    setOpenedId(openId);
+    const task = tasks.find((t) => t.id === openId);
+    if (task) setEditor({ task, status: task.status });
+  }
   const [toast, setToast] = useState<string | null>(null);
 
   const dismissToast = useCallback(() => setToast(null), []);
 
   const groups = useMemo(() => {
     const visible = sortTasks(
-      tasks.filter((task) => matchesSearch(task, query)),
+      tasks.filter((task) => matchesSearch(task, query) && (!onlyMine || task.assigneeId === user.id)),
       sortMode,
     );
     return Object.fromEntries(
       STATUSES.map((status) => [status, visible.filter((task) => task.status === status)]),
     ) as TaskGroups;
-  }, [tasks, query, sortMode]);
+  }, [tasks, query, sortMode, onlyMine, user.id]);
 
   const matchCount = STATUSES.reduce((sum, status) => sum + groups[status].length, 0);
 
@@ -53,6 +68,24 @@ export function TasksView() {
     const params = new URLSearchParams(searchParams);
     if (next === "board") params.set("view", "board");
     else params.delete("view");
+    const qs = params.toString();
+    window.history.replaceState(null, "", qs ? `?${qs}` : "/tasks");
+  }
+
+  /** Closes the editor, and drops ?open= so a reload doesn't open it again. */
+  function closeEditor() {
+    setEditor(null);
+    if (!searchParams.has("open")) return;
+    const params = new URLSearchParams(searchParams);
+    params.delete("open");
+    const qs = params.toString();
+    window.history.replaceState(null, "", qs ? `?${qs}` : "/tasks");
+  }
+
+  function toggleMine() {
+    const params = new URLSearchParams(searchParams);
+    if (onlyMine) params.delete("mine");
+    else params.set("mine", "1");
     const qs = params.toString();
     window.history.replaceState(null, "", qs ? `?${qs}` : "/tasks");
   }
@@ -95,8 +128,25 @@ export function TasksView() {
   return (
     <div className="mx-auto max-w-6xl">
       <div className="mb-5 flex flex-wrap items-center gap-3">
-        <h1 className="text-2xl font-semibold">My Tasks</h1>
+        <h1 className="min-w-0 break-words text-2xl font-semibold">
+          {team.personal ? "My Tasks" : `${team.name} tasks`}
+        </h1>
         <div className="ml-auto flex items-center gap-2">
+          {!team.personal && (
+            <button
+              type="button"
+              aria-pressed={onlyMine}
+              onClick={toggleMine}
+              title="Show only the tasks assigned to you"
+              className={`flex h-10 items-center gap-1.5 rounded-lg px-3 text-sm ring-1 ring-line ${
+                onlyMine ? "bg-brand text-white" : "bg-page text-ink hover:bg-surface"
+              }`}
+            >
+              <UserRound className="size-4" aria-hidden />
+              <span className="hidden sm:inline">Assigned to me</span>
+              <span className="sm:hidden">Mine</span>
+            </button>
+          )}
           <div role="group" aria-label="View" className="flex rounded-lg bg-page p-1 ring-1 ring-line">
             {(["list", "board"] as const).map((option) => (
               <button
@@ -161,11 +211,11 @@ export function TasksView() {
           onDelete={
             editor.task
               ? () => {
-                  if (confirmDelete(editor.task!)) setEditor(null);
+                  if (confirmDelete(editor.task!)) closeEditor();
                 }
               : undefined
           }
-          onClose={() => setEditor(null)}
+          onClose={closeEditor}
         />
       )}
 

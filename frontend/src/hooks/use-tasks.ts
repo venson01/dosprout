@@ -7,6 +7,7 @@ import type {
   CreateGoalInput,
   CreateTimeEntryInput,
   Goal,
+  Member,
   Priority,
   Settings,
   StartTimerInput,
@@ -36,6 +37,8 @@ export interface TaskDraft {
   goalId: number | null;
   /** How long the task should take, in minutes, or null. */
   estimateMinutes: number | null;
+  /** The team member (user id) doing the task, or null. */
+  assigneeId: number | null;
   subtasks: DraftSubtask[];
 }
 
@@ -54,14 +57,17 @@ type LoadState = "loading" | "ready" | "error";
 const newestFirst = (a: TimeEntry, b: TimeEntry) => b.startedAt.localeCompare(a.startedAt) || b.id - a.id;
 
 /**
- * Loads the task list, the goals (which tasks belong to) and the tracked time
- * from the API, and exposes functions to change them.
+ * Loads one team's task list, goals (which tasks belong to), members (whom tasks are
+ * assigned to) and your tracked time from the API, plus your settings, and exposes
+ * functions to change them.
  * Quick actions (moving, completing, deleting) update the screen immediately
  * and quietly re-sync with the server if the request fails.
+ * TasksProvider makes a fresh one whenever you switch teams.
  */
-export function useTasks() {
+export function useTasks(teamId: number) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
+  const [members, setMembers] = useState<Member[]>([]);
   const [timeEntries, setTimeEntries] = useState<TimeEntry[]>([]);
   // The defaults until the real settings have loaded.
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
@@ -71,12 +77,19 @@ export function useTasks() {
 
   useEffect(() => {
     let cancelled = false;
-    // All at once: pages show a task's goal and its tracked time next to it.
-    Promise.all([api.listTasks(), api.listGoals(), api.listTimeEntries(), api.getSettings()]).then(
-      ([taskList, goalList, entryList, savedSettings]) => {
+    // All at once: pages show a task's goal, assignee and tracked time next to it.
+    Promise.all([
+      api.listTasks(),
+      api.listGoals(),
+      api.listTimeEntries(),
+      api.getSettings(),
+      api.listMembers(teamId),
+    ]).then(
+      ([taskList, goalList, entryList, savedSettings, memberList]) => {
         if (cancelled) return;
         setTasks(taskList);
         setGoals(goalList);
+        setMembers(memberList);
         setTimeEntries(entryList);
         setSettings(savedSettings);
         setLoadState("ready");
@@ -90,7 +103,14 @@ export function useTasks() {
     return () => {
       cancelled = true;
     };
-  }, [reloadKey]);
+  }, [reloadKey, teamId]);
+
+  /** Loads the team's members again (after someone was removed or left). */
+  const reloadMembers = useCallback(async () => {
+    setMembers(await api.listMembers(teamId));
+    // Tasks of someone who was removed are no longer assigned to them.
+    api.listTasks().then(setTasks, () => {});
+  }, [teamId]);
 
   const reload = useCallback(() => {
     setLoadState("loading");
@@ -154,6 +174,7 @@ export function useTasks() {
         dueAt: fromDateAndTime(draft.dueDate, draft.dueTime),
         goalId: draft.goalId,
         estimateMinutes: draft.estimateMinutes,
+        assigneeId: draft.assigneeId,
       };
 
       if (!original) {
@@ -207,8 +228,8 @@ export function useTasks() {
     setTasks((list) => list.map((t) => (t.goalId === id ? { ...t, goalId: null } : t)));
   }, []);
 
-  // There's one timer for everyone (no accounts yet), so another browser may have started
-  // or stopped it. After each start / stop, fetch the real list so this page shows what's
+  // You may be logged in on another browser too, which may have started or stopped your
+  // timer. After each start / stop, fetch the real list so this page shows what's
   // actually running.
   const syncTimeEntries = useCallback(() => {
     api.listTimeEntries().then(setTimeEntries, () => {});
@@ -280,6 +301,8 @@ export function useTasks() {
   return {
     tasks,
     goals,
+    members,
+    reloadMembers,
     timeEntries,
     settings,
     saveSettings,

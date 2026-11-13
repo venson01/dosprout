@@ -10,25 +10,31 @@ export function withDefaults(saved: Partial<Settings> | null): Settings {
   };
 }
 
-/** Saves the whole settings object (there's only one row, id 1). */
-export function saveSettingsStatement(settings: Settings): InStatement {
+/** Saves the whole settings object for one person (one row per user). */
+export function saveSettingsStatement(userId: number, settings: Settings): InStatement {
   return {
-    sql: `INSERT INTO settings (id, data) VALUES (1, ?)
-          ON CONFLICT(id) DO UPDATE SET data = excluded.data`,
-    args: [JSON.stringify(settings)],
+    sql: `INSERT INTO user_settings (user_id, data) VALUES (?, ?)
+          ON CONFLICT(user_id) DO UPDATE SET data = excluded.data`,
+    args: [userId, JSON.stringify(settings)],
   };
 }
 
 /**
- * The app's settings (theme, timer lengths, task defaults...). They're stored as one
- * JSON object in a one-row table, so adding a setting later needs no database change:
+ * One person's settings (theme, timer lengths, task defaults...). They're stored as one
+ * JSON object per user, so adding a setting later needs no database change:
  * withDefaults() fills it in.
  */
 export class SettingsStore {
-  constructor(private readonly db: Client) {}
+  constructor(
+    private readonly db: Client,
+    private readonly userId: number,
+  ) {}
 
   async get(): Promise<Settings> {
-    const { rows } = await this.db.execute("SELECT data FROM settings WHERE id = 1");
+    const { rows } = await this.db.execute({
+      sql: "SELECT data FROM user_settings WHERE user_id = ?",
+      args: [this.userId],
+    });
     const row = rows[0] as unknown as { data: string } | undefined;
     return withDefaults(row ? (JSON.parse(row.data) as Partial<Settings>) : null);
   }
@@ -41,7 +47,7 @@ export class SettingsStore {
       ...input,
       notifications: { ...current.notifications, ...input.notifications },
     };
-    await this.db.execute(saveSettingsStatement(next));
+    await this.db.execute(saveSettingsStatement(this.userId, next));
     return next;
   }
 }

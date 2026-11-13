@@ -1,25 +1,20 @@
-import type { Client } from "@libsql/client";
+import type { Client, InStatement } from "@libsql/client";
 
-// Every column, so the copy is exact (same ids, dates, order and completion times).
-const TASK_COLUMNS = [
-  "id",
-  "title",
-  "description",
-  "status",
-  "priority",
-  "tag",
-  "start_at",
-  "due_at",
-  "position",
-  "created_at",
-  "updated_at",
-  "completed_at",
-  "goal_id",
-  "estimate_minutes",
-];
-const SUBTASK_COLUMNS = ["id", "task_id", "title", "done", "position"];
-const GOAL_COLUMNS = ["id", "title", "description", "color", "target_date", "created_at", "updated_at"];
-const TIME_COLUMNS = ["id", "task_id", "kind", "started_at", "ended_at", "note", "created_at"];
+// Every table with data, in an order where nothing points at a row that isn't copied yet.
+// (The schema_version table isn't copied: openDatabase() already set it up in both.)
+const TABLES = [
+  "users",
+  "sessions",
+  "teams",
+  "team_members",
+  "invites",
+  "settings",
+  "user_settings",
+  "goals",
+  "tasks",
+  "subtasks",
+  "time_entries",
+] as const;
 
 /** Thrown when the target already has tasks and `replace` wasn't asked for. */
 export class TargetNotEmptyError extends Error {
@@ -28,26 +23,17 @@ export class TargetNotEmptyError extends Error {
   }
 }
 
-function insertSql(table: string, columns: string[]) {
-  return `INSERT INTO ${table} (${columns.join(", ")}) VALUES (${columns.map(() => "?").join(", ")})`;
-}
-
 /**
- * Copies every task, subtask, goal, time entry and the settings from one database to another,
- * keeping their ids.
+ * Copies everything (accounts, teams, tasks, subtasks, goals, time entries, settings)
+ * from one database to another, row by row with every column, so ids, dates and order
+ * stay exactly the same.
  * Both must already be set up by openDatabase(), so they have the same tables.
- * The target must have no tasks, unless `replace` is true: then its tasks are deleted first.
+ * The target must have no tasks, unless `replace` is true: then its data is deleted first.
  * It all happens in one transaction, so if anything fails, the target is left unchanged.
  */
 export async function copyTasks(from: Client, to: Client, { replace = false } = {}) {
-  const [tasks, subtasks, goals, time, settings] = await from.batch(
-    [
-      "SELECT * FROM tasks ORDER BY id",
-      "SELECT * FROM subtasks ORDER BY id",
-      "SELECT * FROM goals ORDER BY id",
-      "SELECT * FROM time_entries ORDER BY id",
-      "SELECT * FROM settings",
-    ],
+  const results = await from.batch(
+    TABLES.map((table) => `SELECT * FROM ${table}`),
     "read",
   );
 
@@ -55,41 +41,21 @@ export async function copyTasks(from: Client, to: Client, { replace = false } = 
   const existing = Number(rows[0].count);
   if (existing > 0 && !replace) throw new TargetNotEmptyError(existing);
 
-  await to.batch(
-    [
-      "DELETE FROM subtasks",
-      "DELETE FROM tasks",
-      "DELETE FROM goals",
-      "DELETE FROM time_entries",
-      "DELETE FROM settings",
-      ...settings.rows.map((row) => ({
-        sql: "INSERT INTO settings (id, data) VALUES (?, ?)",
-        args: [row.id, row.data],
-      })),
-      ...goals.rows.map((row) => ({
-        sql: insertSql("goals", GOAL_COLUMNS),
-        args: GOAL_COLUMNS.map((column) => row[column]),
-      })),
-      ...tasks.rows.map((row) => ({
-        sql: insertSql("tasks", TASK_COLUMNS),
-        args: TASK_COLUMNS.map((column) => row[column]),
-      })),
-      ...subtasks.rows.map((row) => ({
-        sql: insertSql("subtasks", SUBTASK_COLUMNS),
-        args: SUBTASK_COLUMNS.map((column) => row[column]),
-      })),
-      ...time.rows.map((row) => ({
-        sql: insertSql("time_entries", TIME_COLUMNS),
-        args: TIME_COLUMNS.map((column) => row[column]),
-      })),
-    ],
-    "write",
-  );
+  const inserts: InStatement[] = TABLES.flatMap((table, index) => {
+    const { columns, rows: tableRows } = results[index];
+    const sql = `INSERT INTO ${table} (${columns.join(", ")}) VALUES (${columns.map(() => "?").join(", ")})`;
+    return tableRows.map((row) => ({ sql, args: columns.map((column) => row[column]) }));
+  });
+  await to.batch([...TABLES.map((table) => `DELETE FROM ${table}`), ...inserts], "write");
 
+  // How many rows of each kind were copied, e.g. { tasks: 6, goals: 1, ... }.
+  const count = (table: (typeof TABLES)[number]) => results[TABLES.indexOf(table)].rows.length;
   return {
-    tasks: tasks.rows.length,
-    subtasks: subtasks.rows.length,
-    goals: goals.rows.length,
-    timeEntries: time.rows.length,
+    users: count("users"),
+    teams: count("teams"),
+    tasks: count("tasks"),
+    subtasks: count("subtasks"),
+    goals: count("goals"),
+    timeEntries: count("time_entries"),
   };
 }

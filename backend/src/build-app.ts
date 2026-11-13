@@ -1,23 +1,26 @@
 import cors from "@fastify/cors";
 import Fastify, { type FastifyServerOptions } from "fastify";
+import { AccountStore } from "./account-store.js";
+import { requireLogin, TEAM_HEADER, useTeam } from "./auth.js";
 import { openDatabase } from "./db.js";
-import { GoalStore } from "./goal-store.js";
-import { BackupStore } from "./backup-store.js";
+import { authRoutes } from "./routes/auth.js";
+import { myWorkRoutes } from "./routes/my-work.js";
 import { goalRoutes } from "./routes/goals.js";
 import { settingsRoutes } from "./routes/settings.js";
 import { taskRoutes } from "./routes/tasks.js";
+import { teamRoutes } from "./routes/teams.js";
 import { timeRoutes } from "./routes/time.js";
-import { SettingsStore } from "./settings-store.js";
-import { TaskStore } from "./task-store.js";
-import { TimeStore } from "./time-store.js";
+import { TeamStore } from "./team-store.js";
 
 export interface AppOptions {
   /** Where the database is: "file:data/todos.db", a Turso "libsql://..." URL, or ":memory:" for tests. */
   databaseUrl: string;
   /** Token for a Turso cloud database (not needed for local files). */
   databaseAuthToken?: string;
-  /** Add example tasks when the database is created for the first time. */
+  /** Give each new account a few example tasks. */
   seed?: boolean;
+  /** Only send the login cookie over HTTPS. Turn on for the live site. */
+  secureCookies?: boolean;
   /** Website(s) allowed to call this API from the browser. */
   corsOrigin?: string | string[];
   logger?: FastifyServerOptions["logger"];
@@ -36,6 +39,10 @@ export function buildApp(options: AppOptions) {
   app.register(cors, {
     origin: options.corsOrigin ?? "http://localhost:3000",
     methods: ["GET", "POST", "PATCH", "DELETE"],
+    // Only matters when the website is on another domain (NEXT_PUBLIC_API_URL):
+    // lets the browser send the login cookie and the team header.
+    credentials: true,
+    allowedHeaders: ["Content-Type", TEAM_HEADER],
   });
 
   // A friendly message if you open the API address in the browser.
@@ -46,21 +53,42 @@ export function buildApp(options: AppOptions) {
 
   // Opens the database, then adds the routes that use it.
   app.register(async (api) => {
-    const db = await openDatabase({
-      url: options.databaseUrl,
-      authToken: options.databaseAuthToken,
-      seed: options.seed,
-    });
+    const db = await openDatabase({ url: options.databaseUrl, authToken: options.databaseAuthToken });
     api.addHook("onClose", async () => db.close());
-    const goals = new GoalStore(db);
-    const tasks = new TaskStore(db);
-    await api.register(taskRoutes, { prefix: "/api", store: tasks, goals });
-    await api.register(goalRoutes, { prefix: "/api", goals });
-    await api.register(timeRoutes, { prefix: "/api", time: new TimeStore(db), tasks });
-    await api.register(settingsRoutes, {
+    const accounts = new AccountStore(db);
+    const teams = new TeamStore(db);
+
+    // Our hooks fill these in on each request (see auth.ts). Fastify wants to know
+    // about them up front.
+    api.decorateRequest("user", null as never);
+    api.decorateRequest("team", null as never);
+    api.decorateRequest("stores", null as never);
+
+    // Sign up, log in, invite links: open to everyone (each route checks what it needs).
+    await api.register(authRoutes, {
       prefix: "/api",
-      settings: new SettingsStore(db),
-      backup: new BackupStore(db),
+      accounts,
+      teams,
+      seed: options.seed ?? false,
+      secureCookies: options.secureCookies ?? false,
+    });
+
+    // Everything else needs a login. Hooks added inside a register() only apply to the
+    // routes registered in there. "onRequest" runs first, before the body is even read.
+    await api.register(async (loggedIn) => {
+      loggedIn.addHook("onRequest", requireLogin(accounts));
+      await loggedIn.register(teamRoutes, { prefix: "/api", teams });
+      // Across all your teams, so it doesn't use the X-Team-Id header.
+      await loggedIn.register(myWorkRoutes, { prefix: "/api", db, teams });
+
+      // Routes about one team's data: the team comes from the X-Team-Id header.
+      await loggedIn.register(async (inTeam) => {
+        inTeam.addHook("onRequest", useTeam(db, teams));
+        await inTeam.register(taskRoutes, { prefix: "/api", teams });
+        await inTeam.register(goalRoutes, { prefix: "/api" });
+        await inTeam.register(timeRoutes, { prefix: "/api" });
+        await inTeam.register(settingsRoutes, { prefix: "/api", teams });
+      });
     });
   });
 

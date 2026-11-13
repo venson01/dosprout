@@ -2,6 +2,7 @@
 
 import { Check, Flag, Plus, Trash, X } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
+import { useAuth } from "@/hooks/auth-context";
 import { useTaskList } from "@/hooks/tasks-context";
 import { formatDuration, trackedByTask } from "@/lib/time";
 import type { DraftSubtask, TaskDraft } from "@/hooks/use-tasks";
@@ -69,6 +70,7 @@ function draftFromTask(
     dueTime: due.time,
     goalId: task ? task.goalId : (defaultGoalId ?? null),
     estimateMinutes: task?.estimateMinutes ?? null,
+    assigneeId: task?.assigneeId ?? null,
     subtasks: (task?.subtasks ?? []).map((s) => ({
       key: `id-${s.id}`,
       id: s.id,
@@ -93,7 +95,9 @@ export function TaskDialog({
 }: TaskDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const titleRef = useRef<HTMLInputElement>(null);
-  const { goals, timeEntries, now, settings } = useTaskList();
+  const { goals, members, timeEntries, now, settings } = useTaskList();
+  // Tasks are only assigned in teams (in your personal space they're all yours).
+  const { team } = useAuth();
   const [draft, setDraft] = useState(() =>
     draftFromTask(task, defaultStatus, settings, defaultDueDate, defaultGoalId),
   );
@@ -321,6 +325,26 @@ export function TaskDialog({
                 ))}
               </select>
             </div>
+            {!team.personal && (
+              <div>
+                <label htmlFor={`${ids}-assignee`} className="mb-1 block text-sm font-medium">
+                  Assigned to
+                </label>
+                <select
+                  id={`${ids}-assignee`}
+                  value={draft.assigneeId ?? ""}
+                  onChange={(e) => update("assigneeId", e.target.value ? Number(e.target.value) : null)}
+                  className={inputClass}
+                >
+                  <option value="">Nobody</option>
+                  {members.map((member) => (
+                    <option key={member.id} value={member.id}>
+                      {member.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
 
           <DateTimeField

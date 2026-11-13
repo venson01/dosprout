@@ -10,7 +10,9 @@ Humans should start with [README.md](README.md).
 - The owner is a **beginner**. Keep code simple and readable, prefer plain solutions over clever ones,
   add short comments that explain *why*, and explain your changes in plain language.
   Don't add new libraries unless they clearly pay for themselves, and say why when you do.
-- Pages: **Dashboard**, **Tasks** (list + board), **Goals**, **Time**, **Calendar**, **Settings**.
+- Pages: **Dashboard**, **My work** (all teams at once), **Tasks** (list + board), **Goals**, **Time**,
+  **Calendar**, **Team**, **Settings**,
+  plus **/login**, **/signup** and **/invite/[token]** (in the `app/(auth)` route group: no sidebar, no login needed).
   (The "Coming soon" placeholder route `app/[section]` was removed once every page existed.)
 - `/` is a **landing page** (no sidebar), designed in Figma ("DoSprout Landing Page"); its buttons
   open the app at `/tasks`. The app pages live in the `app/(app)` route group, whose layout adds
@@ -19,7 +21,7 @@ Humans should start with [README.md](README.md).
   `reveal-on-scroll` utility (a scroll-driven animation) in `globals.css`. Feature cards are links,
   so they lift on hover; step cards aren't, so they don't lift (same rule as the Dashboard).
   Every moving part has a `motion-reduce:` class.
-  There is no login: everyone using the same backend shares one task list.
+  Accounts and teams: see "Accounts and teams" below. The app pages need a login.
 
 ## Stack
 
@@ -78,18 +80,30 @@ backend/src/
   server.ts          starts the server; reads env vars (see backend/.env.example)
   build-app.ts       buildApp(): creates Fastify, CORS, routes (used by tests too). Not named
                      app.ts because Vercel would treat src/app.ts as the server entry point.
-  db.ts              connect() + openDatabase(): runs MIGRATIONS, seeds example tasks on first run
-  task-store.ts      TaskStore class: all task SQL (+ statusFromSubtasks, hasUnfinishedSubtasks, NOW)
-  goal-store.ts      GoalStore class: all goal SQL
-  time-store.ts      TimeStore class: all time-entry SQL (start / stop timer, manual entries)
-  settings-store.ts  SettingsStore: the settings, one JSON object in a one-row table (withDefaults)
-  backup-store.ts    BackupStore: export everything, import a backup (replaces all), delete all
+                     Three layers: public auth routes; logged-in routes (teams); team routes
+                     (tasks, goals, time, settings, backups) that read the X-Team-Id header.
+  auth.ts            requireLogin / useTeam hooks (set request.user, request.team, request.stores),
+                     the session cookie, notOwner()
+  passwords.ts       hashPassword / verifyPassword (scrypt), newToken, hashToken (sha256)
+  account-store.ts   AccountStore: users + sessions; createUser (also makes the personal team,
+                     hands old team-less data to the first user, or adds example data)
+  team-store.ts      TeamStore: teams, members, invites
+  example-data.ts    exampleDataStatements(teamId, userId): the example tasks for a new account
+  db.ts              connect() + openDatabase(): runs MIGRATIONS
+  task-store.ts      TaskStore(db, teamId): all task SQL for ONE team (+ statusFromSubtasks, NOW...)
+  goal-store.ts      GoalStore(db, teamId): all goal SQL for one team
+  time-store.ts      TimeStore(db, teamId, userId): one person's time in one team
+  settings-store.ts  SettingsStore(db, userId): one person's settings, a JSON object (withDefaults)
+  backup-store.ts    BackupStore(db, teamId, userId): export / import (new ids) / delete one team's data
   routes/tasks.ts    task HTTP routes + JSON-schema validation
   routes/goals.ts    goal HTTP routes + JSON-schema validation
   routes/time.ts     time-entry HTTP routes + JSON-schema validation
   routes/settings.ts settings, /export, /import (with the backup's JSON schema), /data
+  routes/auth.ts     /auth/signup, /auth/login, /auth/logout, /auth/me, /invites/:token (+ /accept)
+  routes/teams.ts    /teams, /teams/:id, members, invites (owner checks live here)
+  routes/my-work.ts  /my-work: your tasks in all teams (tasksForPerson + goalsForPerson)
   types.ts           API data types (source of truth)
-  copy-tasks.ts      copyTasks(): copies all tasks, subtasks, goals and time entries between two
+  copy-tasks.ts      copyTasks(): copies every table (accounts, teams, tasks...) between two
                      databases (keeps ids)
   scripts/copy-to-turso.ts  `npm run copy-to-turso`: local file -> Turso database in backend/.env
   app.test.ts        API tests using an in-memory database
@@ -97,13 +111,20 @@ frontend/
   next.config.ts     forwards /api to the backend while developing (not on Vercel)
 frontend/src/
   app/               page.tsx: / (the landing page), layout.tsx (theme script in <head>, no AppShell)
-  app/(app)/         the app pages: /dashboard, /tasks, /goals, /time, /calendar, /settings;
+  app/(app)/         the app pages: /dashboard, /my-work, /tasks, /goals, /time, /calendar, /team, /settings;
                      layout.tsx wraps them in AppShell
+  app/(auth)/        /login, /signup, /invite/[token] (no sidebar, no login required)
                      icon.svg: the browser-tab icon (the sidebar's Sprout icon, lighter blue on
                      dark browsers); Next.js adds the <link rel="icon"> by itself
   components/landing/ LandingPage (all sections of /, server components, no state) and AppPreview
                      (an HTML picture of the board, role="img")
-  components/layout/ AppShell, Sidebar, TopBar (search box), Notifications (bell, list, pop-ups),
+  components/auth/   AuthCard (shared look), LoginForm, SignupForm, InviteView
+  components/team/   TeamView: members, invite links, create / rename / leave / delete a team
+  components/my-work/ MyWorkView: your tasks from every team, grouped by due date; team filter;
+                     tick done; clicking a task switches to its team and opens /tasks?open=<id>
+  components/layout/ AppShell (AuthProvider + TasksProvider keyed by team), Sidebar (Space
+                     switcher, Log Out), TopBar (search box, your name), Avatar (initials),
+                     Notifications (bell, list, pop-ups),
                      TimerPill (the running timer / break in the top bar), TimerPopout
                      (the pop-out timer window's content), ThemeSync
   components/tasks/  TasksView (page logic), ListView, BoardView, TaskDialog, TaskMenu, badges,
@@ -119,8 +140,10 @@ frontend/src/
                      (Dashboard "Completed" and Time "Tracked time")
   components/dashboard/ DashboardView: summary cards, needs attention, completed-per-day chart,
                      open tasks by priority / tag
-  hooks/use-tasks.ts loads tasks, goals AND time entries; create/update/delete for all of them
-                     (optimistic for tasks); start/stop timer
+  hooks/auth-context.tsx  AuthProvider + useAuth(): who's logged in, their teams, the current
+                     team (remembered in localStorage; tells lib/api.ts); refresh(), logOut()
+  hooks/use-tasks.ts useTasks(teamId): loads tasks, goals, members AND time entries;
+                     create/update/delete for all of them (optimistic for tasks); start/stop timer
   hooks/use-timer.ts the running timer + the focus/break cycle (in TasksProvider: `useTaskList().timer`)
   hooks/use-ticker.ts the time, ticking every second while a timer runs
   hooks/use-timer-window.ts  the pop-out timer window (Document Picture-in-Picture): open / close
@@ -143,6 +166,7 @@ frontend/src/
   lib/sounds.ts      the timer chimes (Web Audio, no files): playSound("focus-done" / "break-over")
   lib/theme.ts       THEME_STORAGE_KEY + THEME_SCRIPT (shared by the server layout and ThemeSync)
   lib/goals.ts       goal colors (GOAL_COLOR_CLASSES), goalProgress, targetStatus, sortGoals
+  lib/my-work.ts     My work helpers (take `now`): dueGroup, groupByDue, myWorkItems, recentlyDone
 ```
 
 ## API
@@ -150,9 +174,28 @@ frontend/src/
 Base URL `/api` (locally also `http://localhost:4000/api`). JSON in and out. Errors look like
 `{ "statusCode": 404, "error": "Not Found", "message": "Task not found" }`.
 
+Everything except `/health`, `/auth/signup`, `/auth/login`, `/auth/logout` and `GET /invites/:token`
+needs the login cookie (else 401). Task, goal, time, settings and backup routes work on the team in
+the `X-Team-Id` header (your personal team when it's missing; 404 if you're not in that team).
+
 | Method | Path                                 | Body                                              | Returns          |
 | ------ | ------------------------------------ | ------------------------------------------------- | ---------------- |
 | GET    | `/health`                            |                                                   | `{ ok: true }`   |
+| POST   | `/auth/signup`                       | `name`, `email`, `password` (8+), `inviteToken?`  | `Me` (201) + cookie; 409 if the email is taken |
+| POST   | `/auth/login`                        | `email`, `password`                               | `Me` + cookie; 401 if wrong |
+| POST   | `/auth/logout`                       |                                                   | 204, clears the cookie |
+| GET    | `/auth/me`                           |                                                   | `Me` (`user` + `teams`, personal first) |
+| POST   | `/teams`                             | `{ name }`                                        | `TeamSummary` (201), you're the owner |
+| PATCH  | `/teams/:id`                         | `{ name }` (owner, not personal)                   | `TeamSummary`    |
+| DELETE | `/teams/:id`                         | (owner, not personal) deletes ALL its data        | 204              |
+| GET    | `/teams/:id/members`                 |                                                   | `Member[]`       |
+| DELETE | `/teams/:id/members/:userId`         | owner removes someone, or you leave (not the owner) | 204; their tasks become unassigned |
+| GET    | `/teams/:id/invites`                 | (owner)                                           | `Invite[]` (with tokens) |
+| POST   | `/teams/:id/invites`                 | `{ email }` (owner); replaces an old invite for that email | `Invite` (201); 409 if already a member |
+| DELETE | `/teams/:id/invites/:inviteId`       | (owner)                                           | 204              |
+| GET    | `/invites/:token`                    | (no login needed)                                 | `InvitePreview`; 404 if used / expired |
+| POST   | `/invites/:token/accept`             | (logged in as the invited email, else 403)        | `TeamSummary`    |
+| GET    | `/my-work`                           | (no X-Team-Id: all your teams)                    | `MyWorkGroup[]`: per team (personal first) its `tasks` on your plate and its `goals` |
 | GET    | `/tasks`                             |                                                   | `Task[]`         |
 | GET    | `/tasks/:id`                         |                                                   | `Task`           |
 | POST   | `/tasks`                             | `title` (required), `description`, `status`, `priority`, `tag`, `startAt`, `dueAt`, `subtasks: string[]` | `Task` (201) |
@@ -175,8 +218,8 @@ Base URL `/api` (locally also `http://localhost:4000/api`). JSON in and out. Err
 | GET    | `/settings`                          |                                                   | `Settings` (defaults filled in) |
 | PATCH  | `/settings`                          | any settings (`notifications` merges per kind)    | `Settings`       |
 | GET    | `/export`                            |                                                   | `Backup` (everything) |
-| POST   | `/import`                            | a `Backup` (up to 20 MB); REPLACES all data       | `{ ok: true }`   |
-| DELETE | `/data`                              | deletes all tasks, goals, time (settings stay)    | 204              |
+| POST   | `/import`                            | a `Backup` (up to 20 MB); REPLACES the team's data (owner) | `{ ok: true }`   |
+| DELETE | `/data`                              | deletes the team's tasks, goals, time (owner; settings stay) | 204              |
 
 400 errors, besides invalid bodies: `dueAt` earlier than `startAt`, `status: "done"` while the
 task has unfinished subtasks (on POST: `status: "done"` together with `subtasks`), a `goalId`
@@ -196,6 +239,8 @@ Data model:
 - `position`: order within a status column. Changing status without a position moves the task to the bottom.
 - `goalId`: the goal a task belongs to (one at most), or `null`.
 - `estimateMinutes`: how long a task should take (whole minutes, 1 to 60000), or `null`.
+- `assigneeId`: the user id of the team member doing the task, or `null`. Must be a member of
+  the task's team (400 otherwise). Removing someone from a team unassigns their tasks.
 - **Time entries** (`TimeEntry`): `taskId` (or `null`), `kind` (`timer` / `focus` / `manual`),
   `startedAt`, `endedAt` (UTC timestamps; `endedAt` is `null` while the timer runs), `note`. At most
   one entry runs at a time. Deleting a task deletes its time entries.
@@ -210,6 +255,40 @@ Data model:
   except to `done` while a subtask is unfinished (the API answers 400). The frontend checks first with
   `hasUnfinishedSubtasks` and explains (checkbox, ⋮ menu, board drag and the dialog's Status field),
   so users rarely see the 400.
+
+## Accounts and teams
+
+- Email + password, built in (no outside service). Passwords are hashed with scrypt
+  (`passwords.ts`). Logging in creates a session: a random token in an **HttpOnly, SameSite=Lax**
+  cookie (`dosprout_session`, 30 days, `Secure` on Vercel), stored in the database only as a
+  SHA-256 hash. Emails are lowercased and trimmed (`normalizeEmail`).
+- Every user has exactly one **personal team** (`teams.personal = 1`, shown as "Personal"): it
+  can't be renamed, deleted or shared. Other teams have one **owner** (who created it) and members.
+  Owners rename / delete the team, invite / remove people, and restore / delete its data.
+- **Everything is scoped to a team.** `tasks.team_id`, `goals.team_id`, `time_entries.team_id`.
+  The stores take the team id in their constructor and put `team_id = ?` in every query, so a
+  route can't accidentally read another team's rows. `useTeam` (auth.ts) builds them per request.
+- **Tracked time is personal** (`time_entries.user_id`): in a team you only see and edit your
+  own entries, and each person has at most one running timer across all their teams.
+- **Settings are per person** (`user_settings`). The old one-row `settings` table only holds data
+  from before accounts, until the first sign-up takes it over.
+- **Invites are links**, not emails: the owner types an email, gets `/invite/<token>` to send
+  themselves. 7 days, one use, only for that email address (signing up with another address,
+  or accepting while logged in as someone else, is refused). Tokens are stored in plain text so
+  the owner can copy the link again; the session tokens are hashed.
+- **Upgrading an old database:** migration 7 adds the tables; old rows have `team_id = NULL`.
+  The **first** account created takes them over (`AccountStore.createUser`). Later accounts get
+  example data (when `seed` is on). So on a live site with data, sign up yourself first.
+- The frontend sends `X-Team-Id` with every request (`setCurrentTeamId` in `lib/api.ts`, set by
+  `AuthProvider`). Switching team remounts `TasksProvider` (it's keyed by team id) so nothing
+  from the old team stays on screen. The Tasks page has "Assigned to me" (`?mine=1`) in teams.
+- **My work** (`/my-work`) is the one page that spans teams: your personal tasks plus the ones
+  assigned to you elsewhere, grouped Overdue / Today / Next 7 days / Later / No date, plus a
+  "Done in the last 7 days" list. It loads its own data (`api.myWork()`), changes tasks with
+  `api.updateTaskInTeam(teamId, ...)` (the X-Team-Id of that task's team), and calls `reload()`
+  when the task is in the current team. `/tasks?open=<id>` opens a task's editor (TasksView).
+- Not built: password reset, email verification, changing your name / email / password,
+  transferring team ownership, login rate limiting.
 
 ## Notifications
 
@@ -274,9 +353,9 @@ Data model:
 
 ## Time
 
-- There's ONE running timer for everyone (no accounts), stored in the database. Starting one stops
-  any other (`TimeStore.start`, in one batch). After every start / stop the frontend re-fetches the
-  entries (`syncTimeEntries` in `use-tasks.ts`), because another browser may have changed the timer.
+- Each person has ONE running timer, stored in the database. Starting one stops their other one
+  (`TimeStore.start`, in one batch), even in another team. After every start / stop the frontend
+  re-fetches the entries (`syncTimeEntries` in `use-tasks.ts`), because another browser may have changed it.
 - Focus (Pomodoro): `useTimer` ends a focus entry by itself after `FOCUS_MINUTES` (saved as exactly
   25 minutes, even if the computer slept), then counts down a `BREAK_MINUTES` break. The break is
   NOT saved; it's only kept in memory, so it disappears on reload. Both send a desktop
@@ -305,7 +384,7 @@ Data model:
 - `Settings` (see `types.ts`): `theme` (system / light / dark), `focusMinutes`, `breakMinutes`,
   `timerSounds`, `weekStartsOn` (0 Sunday / 1 Monday), `notifications` (started / dueSoon / done / focus),
   `defaultStartTime`, `defaultDueTime`, `defaultPriority`, `tagSuggestions`. Saved on the server
-  (shared by everyone, no accounts). `DEFAULT_SETTINGS` exists in both `types.ts` files, and
+  (each person has their own). `DEFAULT_SETTINGS` exists in both `types.ts` files, and
   `withDefaults` fills in settings added later, so adding a setting needs no migration.
 - Read settings with `useTaskList().settings`; change them with `saveSettings(partial)` (the
   screen updates first). Don't hard-code what's a setting: week start is a parameter of
@@ -357,7 +436,8 @@ Data model:
   Never edit or reorder existing migrations, because people's databases have already run them.
   Statements are split on `;`, so don't put `;` inside text values. The version lives in the
   `schema_version` table (older local databases used `PRAGMA user_version`, which is read once).
-- Keep SQL in the stores (`TaskStore`, `GoalStore`, `TimeStore`, `SettingsStore`, `BackupStore`).
+- Keep SQL in the stores (`TaskStore`, `GoalStore`, `TimeStore`, `SettingsStore`, `BackupStore`,
+  `AccountStore`, `TeamStore`).
   Keep route handlers thin. Validate every request body with a JSON schema.
 - Store methods are `async` (the database may be in the cloud), so `await` them.
   Writes that must happen together go in one `db.batch([...], "write")`, which is a transaction
@@ -384,11 +464,10 @@ Data model:
 
 ## Not built yet (possible next steps)
 
-- User accounts and login (the sidebar "Log Out" is disabled, and the top bar shows "Guest").
+- Password reset, email verification, editing your profile, transferring team ownership.
 - Live updates between browsers: each page loads the data once (and the timer re-syncs on
   start / stop), so changes made elsewhere show after a reload.
 - Reordering cards within a board column (drag & drop currently only changes the column).
 - Notifications while the browser is closed (web push).
 - File attachments (shown in the moodboard).
-- Per-person settings (they're shared until there are accounts).
 - Frontend tests (e.g. Vitest + Testing Library, or Playwright).
