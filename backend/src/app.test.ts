@@ -24,6 +24,8 @@ import {
   type OrganizationDetails,
   type OrganizationInvite,
   type OrganizationSummary,
+  type EstimateSample,
+  type PlanEntry,
   type Settings,
   type Task,
   type TeamSummary,
@@ -1388,5 +1390,134 @@ describe("profile pictures", () => {
     }
     const me = (await inject({ method: "GET", url: "/api/auth/me" })).json() as Me;
     assert.equal(me.user.avatarUpdatedAt, null);
+  });
+});
+
+describe("plan my day", () => {
+  const planTask = (taskId: number, day: string) =>
+    inject({ method: "PUT", url: `/api/plan/${taskId}`, payload: { day } });
+  const plan = async () => (await inject({ method: "GET", url: "/api/plan" })).json() as PlanEntry[];
+
+  test("plan a task for a day, move it to another day, take it out", async () => {
+    const me = (await inject({ method: "GET", url: "/api/auth/me" })).json() as Me;
+    const personalId = me.teams[0].id;
+    const a = await createTask({ title: "Write report" });
+    const b = await createTask({ title: "Call the bank" });
+
+    assert.equal((await planTask(a.id, "2026-11-13")).statusCode, 200);
+    assert.equal((await planTask(b.id, "2026-11-13")).statusCode, 200);
+    assert.deepEqual(await plan(), [
+      { taskId: a.id, teamId: personalId, day: "2026-11-13" },
+      { taskId: b.id, teamId: personalId, day: "2026-11-13" },
+    ]);
+
+    // Planning it again moves it: a task is on one day at most.
+    const moved = await planTask(a.id, "2026-11-14");
+    assert.deepEqual(moved.json(), { taskId: a.id, teamId: personalId, day: "2026-11-14" });
+    assert.deepEqual((await plan()).map((e) => [e.taskId, e.day]), [[b.id, "2026-11-13"], [a.id, "2026-11-14"]]);
+
+    assert.equal((await inject({ method: "DELETE", url: `/api/plan/${b.id}` })).statusCode, 204);
+    // Deleting a task takes it out of plans too.
+    await inject({ method: "DELETE", url: `/api/tasks/${a.id}` });
+    assert.deepEqual(await plan(), []);
+  });
+
+  test("plans are personal, and only tasks in your teams can be planned", async () => {
+    const task = await createTask({ title: "Ada's task" });
+    await planTask(task.id, "2026-11-13");
+    const bob = await signUp("Bob", "bob@example.com");
+    const asBob = (options: InjectOptions) => app.inject({ ...options, headers: { cookie: bob.cookie } });
+
+    assert.deepEqual((await asBob({ method: "GET", url: "/api/plan" })).json(), []);
+    const response = await asBob({ method: "PUT", url: `/api/plan/${task.id}`, payload: { day: "2026-11-13" } });
+    assert.equal(response.statusCode, 404);
+  });
+
+  test("rejects days that aren't days", async () => {
+    const task = await createTask({ title: "Write report" });
+    for (const day of ["2026-13-01", "13/11/2026", "2026-11-13T09:00:00Z", ""]) {
+      assert.equal((await planTask(task.id, day)).statusCode, 400, day);
+    }
+  });
+
+  test("the hours you have for tasks is a setting", async () => {
+    const settings = (await inject({ method: "GET", url: "/api/settings" })).json() as Settings;
+    assert.equal(settings.workdayMinutes, 360);
+    const changed = await inject({ method: "PATCH", url: "/api/settings", payload: { workdayMinutes: 480 } });
+    assert.equal((changed.json() as Settings).workdayMinutes, 480);
+    const tooMuch = await inject({ method: "PATCH", url: "/api/settings", payload: { workdayMinutes: 2000 } });
+    assert.equal(tooMuch.statusCode, 400);
+  });
+});
+
+describe("estimate accuracy", () => {
+  /** A finished task with an estimate and `tracked` minutes of time. */
+  async function finished(title: string, tag: string, estimateMinutes: number | null, tracked: number) {
+    const task = await createTask({ title, tag, estimateMinutes });
+    const startedAt = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    const endedAt = new Date(startedAt.getTime() + tracked * 60 * 1000);
+    const entry = await inject({
+      method: "POST",
+      url: "/api/time-entries",
+      payload: { taskId: task.id, startedAt: startedAt.toISOString(), endedAt: endedAt.toISOString() },
+    });
+    assert.equal(entry.statusCode, 201, entry.body);
+    await inject({ method: "PATCH", url: `/api/tasks/${task.id}`, payload: { status: "done" } });
+    return task;
+  }
+
+  const samples = async () => (await inject({ method: "GET", url: "/api/estimates" })).json() as EstimateSample[];
+
+  test("finished tasks with an estimate and tracked time are compared", async () => {
+    const report = await finished("Report", "Work", 30, 45);
+    await finished("No estimate", "Work", null, 20);
+    // Estimated and tracked, but not finished yet: not counted.
+    const open = await createTask({ title: "Open", estimateMinutes: 10 });
+    await inject({
+      method: "POST",
+      url: "/api/time-entries",
+      payload: { taskId: open.id, startedAt: "2026-11-01T09:00:00.000Z", endedAt: "2026-11-01T09:30:00.000Z" },
+    });
+
+    const list = await samples();
+    assert.equal(list.length, 1);
+    assert.deepEqual(
+      { ...list[0], completedAt: undefined },
+      { taskId: report.id, tag: "Work", estimateMinutes: 30, trackedMinutes: 45, completedAt: undefined },
+    );
+  });
+
+  test("only your own tracked time counts, in tasks on your plate", async () => {
+    // In a team: a task assigned to Bob, finished, with Ada's and Bob's time on it.
+    const team = (await inject({ method: "POST", url: "/api/teams", payload: { name: "Design" } })).json() as TeamSummary;
+    const { token } = (
+      await inject({ method: "POST", url: `/api/teams/${team.id}/invites`, payload: { email: "bob@example.com" } })
+    ).json() as Invite;
+    const bob = await signUp("Bob", "bob@example.com", { inviteToken: token });
+    const inTeam = { "x-team-id": String(team.id) };
+    const asBob = (options: InjectOptions) =>
+      app.inject({ ...options, headers: { cookie: bob.cookie, ...inTeam, ...options.headers } });
+
+    const task = (
+      await inject({
+        method: "POST",
+        url: "/api/tasks",
+        headers: inTeam,
+        payload: { title: "Logo", estimateMinutes: 60, assigneeId: bob.me.user.id },
+      })
+    ).json() as Task;
+    const time = (start: string, end: string) => ({
+      method: "POST" as const,
+      url: "/api/time-entries",
+      payload: { taskId: task.id, startedAt: start, endedAt: end },
+    });
+    await inject({ ...time("2026-11-01T09:00:00.000Z", "2026-11-01T10:00:00.000Z"), headers: inTeam });
+    await asBob(time("2026-11-02T09:00:00.000Z", "2026-11-02T10:30:00.000Z"));
+    await asBob({ method: "PATCH", url: `/api/tasks/${task.id}`, payload: { status: "done" } });
+
+    // Bob's task, Bob's 90 minutes. It isn't on Ada's plate, so it's not in hers.
+    const bobs = (await asBob({ method: "GET", url: "/api/estimates" })).json() as EstimateSample[];
+    assert.deepEqual(bobs.map((s) => [s.taskId, s.trackedMinutes]), [[task.id, 90]]);
+    assert.deepEqual(await samples(), []);
   });
 });

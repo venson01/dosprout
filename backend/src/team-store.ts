@@ -175,6 +175,7 @@ export class TeamStore {
     // We delete the child rows ourselves (foreign key checks aren't switched on).
     const statements: InStatement[] = [
       "DELETE FROM subtasks WHERE task_id IN (SELECT id FROM tasks WHERE team_id = ?)",
+      "DELETE FROM day_plans WHERE task_id IN (SELECT id FROM tasks WHERE team_id = ?)",
       "DELETE FROM time_entries WHERE team_id = ?",
       "DELETE FROM tasks WHERE team_id = ?",
       "DELETE FROM goals WHERE team_id = ?",

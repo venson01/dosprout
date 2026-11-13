@@ -18,6 +18,7 @@ const TABLES = [
   "tasks",
   "subtasks",
   "time_entries",
+  "day_plans",
 ] as const;
 
 /** Thrown when the target already has tasks and `replace` wasn't asked for. */

@@ -21,6 +21,7 @@ export class BackupStore {
   private deleteAllStatements(): InStatement[] {
     return [
       "DELETE FROM subtasks WHERE task_id IN (SELECT id FROM tasks WHERE team_id = ?)",
+      "DELETE FROM day_plans WHERE task_id IN (SELECT id FROM tasks WHERE team_id = ?)",
       "DELETE FROM time_entries WHERE team_id = ?",
       "DELETE FROM tasks WHERE team_id = ?",
       "DELETE FROM goals WHERE team_id = ?",

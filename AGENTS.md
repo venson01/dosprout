@@ -10,7 +10,8 @@ Humans should start with [README.md](README.md).
 - The owner is a **beginner**. Keep code simple and readable, prefer plain solutions over clever ones,
   add short comments that explain *why*, and explain your changes in plain language.
   Don't add new libraries unless they clearly pay for themselves, and say why when you do.
-- Pages: **Dashboard**, **My work** (all teams at once), **Tasks** (list + board), **Goals**, **Time**,
+- Pages: **Dashboard**, **Today** ("Plan my day", all teams), **My work** (all teams at once),
+  **Tasks** (list + board), **Goals**, **Time**,
   **Calendar**, **Team**, **Organization**, **Settings**,
   plus **/login**, **/signup** and **/invite/[token]** (in the `app/(auth)` route group: no sidebar, no login needed).
   (The "Coming soon" placeholder route `app/[section]` was removed once every page existed.)
@@ -95,6 +96,7 @@ backend/src/
   task-store.ts      TaskStore(db, teamId): all task SQL for ONE team (+ statusFromSubtasks, NOW...)
   goal-store.ts      GoalStore(db, teamId): all goal SQL for one team
   time-store.ts      TimeStore(db, teamId, userId): one person's time in one team
+  plan-store.ts      PlanStore(db, userId): one person's day plans + estimateSamples (all teams)
   settings-store.ts  SettingsStore(db, userId): one person's settings, a JSON object (withDefaults)
   backup-store.ts    BackupStore(db, teamId, userId): export / import (new ids) / delete one team's data
   routes/tasks.ts    task HTTP routes + JSON-schema validation
@@ -105,6 +107,7 @@ backend/src/
   routes/teams.ts    /teams, /teams/:id, members, invites (canManage checks live here)
   routes/organizations.ts  /organizations/... (admin checks live here)
   routes/my-work.ts  /my-work: your tasks in all teams (tasksForPerson + goalsForPerson)
+  routes/plan.ts     /plan (Plan my day) and /estimates (estimate accuracy), all your teams
   routes/profile.ts  profile pictures: PUT / DELETE /me/avatar, GET /users/:id/avatar
                      (parseAvatar checks the image's first bytes, see "Profile pictures")
   types.ts           API data types (source of truth)
@@ -131,7 +134,10 @@ frontend/src/
   components/organization/ OrganizationView: numbers, all teams (open / join / create), member
                      directory (roles, remove), invites, leave / delete, create an organization
   components/my-work/ MyWorkView: your tasks from every team, grouped by due date; team filter;
-                     tick done; clicking a task switches to its team and opens /tasks?open=<id>
+                     tick done; clicking a task switches to its team and opens /tasks?open=<id>.
+                     Exports DoneCheckbox, TaskTitleButton, TeamBadge (also used by Today)
+  components/today/  TodayView ("Plan my day"): the day's load vs your hours, today's plan,
+                     suggestions, all other open tasks; "Move to tomorrow"
   components/layout/ AppShell (AuthProvider + TasksProvider keyed by team), Sidebar (Space
                      switcher, Log Out), TopBar (search box, your name: a link to your
                      profile), Avatar (profile picture, or initials),
@@ -179,6 +185,10 @@ frontend/src/
   lib/theme.ts       THEME_STORAGE_KEY + THEME_SCRIPT (shared by the server layout and ThemeSync)
   lib/goals.ts       goal colors (GOAL_COLOR_CLASSES), goalProgress, targetStatus, sortGoals
   lib/my-work.ts     My work helpers (take `now`): dueGroup, groupByDue, myWorkItems, recentlyDone
+  lib/estimates.ts   estimate accuracy: estimateAccuracy, accuracyFor, realisticMinutes,
+                     estimateHint, describeFactor (see "Plan my day and estimate accuracy")
+  lib/today.ts       Today helpers (take `now`): todaysPlan, suggestions, otherOpenTasks,
+                     dayLoad, tasksToMove, todayKey / tomorrowKey
   lib/avatar-image.ts squareAvatar(file): any picture -> a 256 x 256 JPEG data URL (center crop)
 ```
 
@@ -221,6 +231,10 @@ the `X-Team-Id` header (your personal team when it's missing; 404 if you're not 
 | POST   | `/organizations/:id/teams/:teamId/join` | (admin)                                        | `TeamSummary`    |
 | GET / POST / DELETE | `/organizations/:id/invites[/:inviteId]` | (admin) like team invites            | `OrganizationInvite` |
 | GET    | `/my-work`                           | (no X-Team-Id: all your teams)                    | `MyWorkGroup[]`: per team (personal first) its `tasks` on your plate and its `goals` |
+| GET    | `/plan`                              | (all your teams)                                  | `PlanEntry[]` (`taskId`, `teamId`, `day`) |
+| PUT    | `/plan/:taskId`                      | `{ day: "2026-11-13" }` plans it, or moves it to that day | `PlanEntry`; 404 if not in your teams |
+| DELETE | `/plan/:taskId`                      |                                                   | 204              |
+| GET    | `/estimates`                         | (all your teams)                                  | `EstimateSample[]`: finished tasks on your plate with an estimate and your tracked time |
 | GET    | `/tasks`                             |                                                   | `Task[]`         |
 | GET    | `/tasks/:id`                         |                                                   | `Task`           |
 | POST   | `/tasks`                             | `title` (required), `description`, `status`, `priority`, `tag`, `startAt`, `dueAt`, `subtasks: string[]` | `Task` (201) |
@@ -355,6 +369,32 @@ Data model:
   while a DoSprout tab is open but you're looking elsewhere. Notifying while the browser is closed
   would need web push (service worker + server job) and isn't built.
 
+## Plan my day and estimate accuracy
+
+DoSprout's signature idea: it learns how long things *really* take you, and plans with that.
+- **Estimate accuracy** (`lib/estimates.ts`). `GET /estimates` returns your finished tasks
+  (last 180 days, on your plate in any team, same rule as My work) that had an estimate and that
+  YOU tracked time on (others' time doesn't count). Accuracy = total tracked / total estimated
+  (so long tasks weigh more than short ones), clamped to 0.25..4, per tag and overall, only with
+  at least `MIN_SAMPLES` (3) tasks. A task's tag uses its tag's number if known, else the overall
+  one. Within 10% counts as "about right" (`worthMentioning`).
+- `useTasks` loads the samples once the tasks are in and again when the number of done tasks
+  changes (after a short wait so the change is saved first); read them with
+  `useTaskList().estimates`. Shown on the Dashboard ("Estimate accuracy" card, not a link so it
+  doesn't lift) and under the task editor's Estimate field (`estimateHint`).
+- **Today page** (`/today`, `TodayView`): your plan for today across all teams. Plans are per
+  person (`day_plans`: user, task, day as the viewer's local "2026-11-13"); a task is planned for
+  one day at most, so planning it again moves it. Moving to tomorrow changes only the plan, never
+  the task's dates (the user chose this). Done tasks stay in the day's plan (they used its time).
+- The load card adds up the planned tasks' realistic minutes (estimate x accuracy, rounded to
+  5 minutes) against `settings.workdayMinutes`. Tasks without an estimate aren't counted (it says
+  how many). Over the limit, `tasksToMove` picks unfinished, estimated tasks not due today or
+  overdue: low priority first, then the ones due last, until enough time is freed.
+- Suggestions: unfinished tasks left over from an earlier day's plan, overdue, due today, or
+  already started (not ones you planned for a later day). The rest is under "All my other open
+  tasks". Plan rows that point at deleted tasks are removed with the task (and `GET /plan` only
+  returns tasks in teams you're still in).
+
 ## Calendar
 
 - A task covers every day from its start day to its due day (only one date = that day; no dates =
@@ -433,7 +473,8 @@ Data model:
 
 - `Settings` (see `types.ts`): `theme` (system / light / dark), `focusMinutes`, `breakMinutes`,
   `timerSounds`, `weekStartsOn` (0 Sunday / 1 Monday), `notifications` (started / dueSoon / done / focus),
-  `defaultStartTime`, `defaultDueTime`, `defaultPriority`, `tagSuggestions`. Saved on the server
+  `defaultStartTime`, `defaultDueTime`, `defaultPriority`, `tagSuggestions`, `workdayMinutes`
+  (hours for tasks per day, for the Today page). Saved on the server
   (each person has their own). `DEFAULT_SETTINGS` exists in both `types.ts` files, and
   `withDefaults` fills in settings added later, so adding a setting needs no migration.
 - Read settings with `useTaskList().settings`; change them with `saveSettings(partial)` (the

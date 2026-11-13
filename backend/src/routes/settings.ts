@@ -42,6 +42,8 @@ const settingsFields = {
     uniqueItems: true,
     items: { type: "string", minLength: 1, maxLength: 30, pattern: "\\S" },
   },
+  // From 30 minutes to 16 hours.
+  workdayMinutes: { type: "integer", minimum: 30, maximum: 960 },
 } as const;
 
 const timestamp = { type: "string", format: "date-time" } as const;

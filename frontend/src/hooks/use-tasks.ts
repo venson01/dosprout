@@ -1,11 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
+import { estimateAccuracy } from "@/lib/estimates";
 import { fromDateAndTime } from "@/lib/task-helpers";
 import type {
   CreateGoalInput,
   CreateTimeEntryInput,
+  EstimateSample,
   Goal,
   Member,
   Priority,
@@ -74,6 +76,8 @@ export function useTasks(teamId: number) {
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [loadError, setLoadError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  // Your finished tasks with an estimate and tracked time, in ALL your teams (lib/estimates.ts).
+  const [estimateSamples, setEstimateSamples] = useState<EstimateSample[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -104,6 +108,21 @@ export function useTasks(teamId: number) {
       cancelled = true;
     };
   }, [reloadKey, teamId]);
+
+  // Load the estimate history once the tasks are in, and again whenever a task is finished
+  // or reopened, so the numbers stay up to date. The short wait lets the change reach the
+  // server first (finishing a task shows on screen before it's saved).
+  const doneCount = tasks.filter((task) => task.status === "done").length;
+  useEffect(() => {
+    if (loadState !== "ready") return;
+    const timer = setTimeout(() => {
+      api.estimates().then(setEstimateSamples, () => {
+        // Not worth an error message: the pages work without it, just with less advice.
+      });
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [doneCount, loadState]);
+  const estimates = useMemo(() => estimateAccuracy(estimateSamples), [estimateSamples]);
 
   /** Loads the team's members again (after someone was removed or left). */
   const reloadMembers = useCallback(async () => {
@@ -304,6 +323,8 @@ export function useTasks(teamId: number) {
     members,
     reloadMembers,
     timeEntries,
+    /** How your estimates compare with your tracked time (all your teams). */
+    estimates,
     settings,
     saveSettings,
     loadState,

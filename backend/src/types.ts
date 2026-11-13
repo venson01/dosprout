@@ -159,6 +159,8 @@ export interface Settings {
   defaultPriority: Priority;
   /** Tags suggested in the task editor. */
   tagSuggestions: string[];
+  /** How much time you have for tasks on a day, in minutes ("Plan my day" compares with it). */
+  workdayMinutes: number;
 }
 
 export type UpdateSettingsInput = Partial<Omit<Settings, "notifications">> & {
@@ -176,6 +178,7 @@ export const DEFAULT_SETTINGS: Settings = {
   defaultDueTime: "17:00",
   defaultPriority: "mid",
   tagSuggestions: ["Work", "Health", "Personal", "Study", "Home"],
+  workdayMinutes: 6 * 60,
 };
 
 /** Everything in one team (plus your own settings and tracked time): what GET /export returns and POST /import accepts. */
@@ -337,6 +340,33 @@ export interface MyWorkGroup {
   team: TeamSummary;
   tasks: Task[];
   goals: Goal[];
+}
+
+/** A task you planned for a day ("Plan my day", GET /plan). */
+export interface PlanEntry {
+  taskId: number;
+  /** The team the task is in. */
+  teamId: number;
+  /** Your own local day, like "2026-11-13". */
+  day: string;
+}
+
+/** PUT /plan/:taskId */
+export interface PlanTaskInput {
+  day: string;
+}
+
+/**
+ * A finished task you estimated and tracked time on (GET /estimates). Estimate accuracy
+ * compares the two: trackedMinutes / estimateMinutes.
+ */
+export interface EstimateSample {
+  taskId: number;
+  tag: string;
+  estimateMinutes: number;
+  /** Your own tracked time on it, in whole minutes (at least 1). */
+  trackedMinutes: number;
+  completedAt: string;
 }
 
 export interface SignupInput {

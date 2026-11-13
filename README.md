@@ -46,6 +46,12 @@ deployed on Vercel). The design is based on [moodboard/inspo.png](moodboard/insp
 - **Organizations** (optional): group a company's teams. Admins invite people once, see every
   team with its open and overdue work, join and manage any team, add colleagues to teams without
   a new link, and remove someone from all teams in one step.
+- **Plan my day** (the Today page): pick today's tasks from all your teams and see if they fit
+  in the hours you have. DoSprout **learns how long things really take you** by comparing your
+  estimates with your tracked time ("Your Work tasks take 1.5× longer than you estimate"), uses
+  that to correct each estimate, and when the day is too full suggests which tasks to move to
+  tomorrow. The Dashboard shows your estimate accuracy, and the task editor says what an
+  estimate really means.
 - **My work**: everything on your plate across all your teams on one page, grouped by when
   it's due (overdue, today, this week...), with a filter per team.
 

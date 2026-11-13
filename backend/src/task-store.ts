@@ -290,9 +290,10 @@ export class TaskStore {
     // because that only works when SQLite's foreign key checks are switched on.
     // The "IN (SELECT ...)" parts make sure the task really is in this team.
     const thisTeamsTask = "(SELECT id FROM tasks WHERE id = ? AND team_id = ?)";
-    const [, , taskResult] = await this.db.batch(
+    const [, , , taskResult] = await this.db.batch(
       [
         { sql: `DELETE FROM subtasks WHERE task_id IN ${thisTeamsTask}`, args: [id, this.teamId] },
+        { sql: `DELETE FROM day_plans WHERE task_id IN ${thisTeamsTask}`, args: [id, this.teamId] },
         { sql: `DELETE FROM time_entries WHERE task_id IN ${thisTeamsTask}`, args: [id, this.teamId] },
         { sql: "DELETE FROM tasks WHERE id = ? AND team_id = ?", args: [id, this.teamId] },
       ],

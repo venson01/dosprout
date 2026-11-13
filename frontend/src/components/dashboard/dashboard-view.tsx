@@ -1,6 +1,6 @@
 "use client";
 
-import { AlarmClock, CircleCheck, CircleDashed, Clock, type LucideIcon } from "lucide-react";
+import { AlarmClock, CircleCheck, CircleDashed, Clock, Sprout, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useState } from "react";
 import { PeriodChart, usePeriodParam } from "@/components/charts/period-chart";
@@ -9,6 +9,7 @@ import { TaskDialog } from "@/components/tasks/task-dialog";
 import { useTaskList } from "@/hooks/tasks-context";
 import { useCountUp } from "@/hooks/use-count-up";
 import { completedPer, needsAttention, openByPriority, openByTag, summarize } from "@/lib/dashboard";
+import { describeFactor, MIN_SAMPLES, shortFactor } from "@/lib/estimates";
 import { PERIODS } from "@/lib/periods";
 import { PRIORITY_LABELS } from "@/lib/task-helpers";
 import { GOAL_COLOR_CLASSES, goalProgress, sortGoals, targetStatus } from "@/lib/goals";
@@ -83,7 +84,8 @@ export function DashboardView() {
               rows={openByTag(tasks).map(({ tag, count }) => ({ label: tag, count, fill: "bg-tag" }))}
             />
           </div>
-          <GoalsSummary goals={goals} tasks={tasks} now={now} delay={7 * STAGGER_MS} />
+          <EstimateAccuracyCard delay={7 * STAGGER_MS} />
+          <GoalsSummary goals={goals} tasks={tasks} now={now} delay={8 * STAGGER_MS} />
         </div>
       )}
 
@@ -412,6 +414,58 @@ function BreakdownRow({
         <span className="sr-only">{count}</span>
       </span>
     </li>
+  );
+}
+
+/**
+ * How long things really take you compared with your estimates (lib/estimates.ts).
+ * It's about you, so it uses your finished tasks in all your teams, not only this one.
+ */
+function EstimateAccuracyCard({ delay }: { delay: number }) {
+  const { estimates } = useTaskList();
+  const { overall, byTag, sampleCount } = estimates;
+
+  return (
+    <Card title="Estimate accuracy" aside="All your teams" className={CARD_ENTRANCE} delay={delay}>
+      {overall === null ? (
+        <div className="flex items-start gap-3 text-sm">
+          <Sprout className="mt-0.5 size-5 shrink-0 text-brand" aria-hidden />
+          <div>
+            <p className="font-medium">Still learning how long things take you</p>
+            <p className="mt-1 text-muted">
+              Give a task an estimate, track time on it (Start timer in its ⋮ menu) and finish it. After{" "}
+              {MIN_SAMPLES} tasks like that, you&apos;ll see how your estimates compare with reality. So far:{" "}
+              {sampleCount} of {MIN_SAMPLES}.
+            </p>
+          </div>
+        </div>
+      ) : (
+        <div className="grid gap-5 sm:grid-cols-[minmax(0,16rem)_1fr]">
+          <div>
+            <p className="text-3xl font-semibold tabular-nums">{overall.factor.toFixed(1)}×</p>
+            <p className="mt-1 text-sm text-muted">
+              Your tasks take {describeFactor(overall.factor)}, based on {overall.count} finished tasks. Plan my
+              day and the task editor correct your estimates with this.
+            </p>
+          </div>
+          {byTag.length > 0 ? (
+            <ul className="divide-y divide-line text-sm" aria-label="By tag">
+              {byTag.map(({ tag, accuracy }) => (
+                <li key={tag} className="flex flex-wrap items-baseline gap-x-3 py-2 first:pt-0">
+                  <span className="min-w-0 flex-1 truncate font-medium">{tag}</span>
+                  <span className="tabular-nums">{shortFactor(accuracy.factor)}</span>
+                  <span className="w-16 text-right text-xs text-muted">{accuracy.count} tasks</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-muted">
+              Numbers per tag (Work, Study...) appear once a tag has {MIN_SAMPLES} finished tasks.
+            </p>
+          )}
+        </div>
+      )}
+    </Card>
   );
 }
 

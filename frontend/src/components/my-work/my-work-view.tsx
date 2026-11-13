@@ -202,12 +202,12 @@ function TeamFilterBar({
   );
 }
 
-function teamLabel(team: TeamSummary): string {
+export function teamLabel(team: TeamSummary): string {
   return team.personal ? "Personal" : team.name;
 }
 
 /** Which team a task lives in. */
-function TeamBadge({ team }: { team: TeamSummary }) {
+export function TeamBadge({ team }: { team: TeamSummary }) {
   const Icon = team.personal ? User : Users;
   return (
     <span className="inline-flex max-w-40 items-center gap-1 rounded-md bg-brand-soft px-2 py-0.5 text-xs font-medium text-brand">
@@ -229,52 +229,14 @@ function WorkRow({
 }) {
   const { task, team, goal } = item;
   const done = task.status === "done";
-  // Can't be ticked until every subtask is (clicking it explains why).
-  const blocked = !done && hasUnfinishedSubtasks(task);
   const finished = task.subtasks.filter((s) => s.done).length;
 
   return (
     <li className="flex items-start gap-3 py-3">
-      <button
-        type="button"
-        role="checkbox"
-        aria-checked={done}
-        aria-label={
-          done
-            ? `Mark "${task.title}" as not done`
-            : blocked
-              ? `Mark "${task.title}" as done (finish its subtasks first)`
-              : `Mark "${task.title}" as done`
-        }
-        aria-disabled={blocked}
-        title={blocked ? "Finish all subtasks first" : undefined}
-        onClick={() => onToggle(item)}
-        className={`mt-0.5 grid size-5 shrink-0 place-items-center rounded border transition-colors ${
-          done
-            ? "border-brand bg-brand text-white"
-            : blocked
-              ? "cursor-not-allowed border-line bg-page"
-              : "border-line bg-surface hover:border-brand"
-        }`}
-      >
-        {done && <Check className="size-3.5" strokeWidth={3} />}
-      </button>
+      <DoneCheckbox task={task} onToggle={() => onToggle(item)} />
 
       <div className="min-w-0 flex-1">
-        <button
-          type="button"
-          onClick={() => onOpen(item)}
-          className={`group flex max-w-full items-center gap-1 text-left text-sm font-medium hover:text-brand ${
-            done ? "text-muted line-through" : ""
-          }`}
-        >
-          <span className="truncate">{task.title}</span>
-          <ChevronRight
-            className="size-4 shrink-0 text-muted opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
-            aria-hidden
-          />
-          <span className="sr-only">(open in {teamLabel(team)})</span>
-        </button>
+        <TaskTitleButton task={task} team={team} onOpen={() => onOpen(item)} />
         <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1.5">
           <TeamBadge team={team} />
           {!done && <PriorityBadge priority={task.priority} />}
@@ -288,6 +250,59 @@ function WorkRow({
         </div>
       </div>
     </li>
+  );
+}
+
+/** The round "done" checkbox. Can't be ticked until every subtask is (clicking it explains why). */
+export function DoneCheckbox({ task, onToggle }: { task: Task; onToggle: () => void }) {
+  const done = task.status === "done";
+  const blocked = !done && hasUnfinishedSubtasks(task);
+  return (
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={done}
+      aria-label={
+        done
+          ? `Mark "${task.title}" as not done`
+          : blocked
+            ? `Mark "${task.title}" as done (finish its subtasks first)`
+            : `Mark "${task.title}" as done`
+      }
+      aria-disabled={blocked}
+      title={blocked ? "Finish all subtasks first" : undefined}
+      onClick={onToggle}
+      className={`mt-0.5 grid size-5 shrink-0 place-items-center rounded border transition-colors ${
+        done
+          ? "border-brand bg-brand text-white"
+          : blocked
+            ? "cursor-not-allowed border-line bg-page"
+            : "border-line bg-surface hover:border-brand"
+      }`}
+    >
+      {done && <Check className="size-3.5" strokeWidth={3} />}
+    </button>
+  );
+}
+
+/** The task's title: opens its editor on the Tasks page (in its own team). */
+export function TaskTitleButton({ task, team, onOpen }: { task: Task; team: TeamSummary; onOpen: () => void }) {
+  const done = task.status === "done";
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className={`group flex max-w-full items-center gap-1 text-left text-sm font-medium hover:text-brand ${
+        done ? "text-muted line-through" : ""
+      }`}
+    >
+      <span className="truncate">{task.title}</span>
+      <ChevronRight
+        className="size-4 shrink-0 text-muted opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
+        aria-hidden
+      />
+      <span className="sr-only">(open in {teamLabel(team)})</span>
+    </button>
   );
 }
 
