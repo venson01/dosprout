@@ -1,6 +1,23 @@
 @import "tailwindcss";
 
 /*
+  Two extra size steps for large monitors, used by the login / sign-up pages: "big:" for a
+  1920px-wide screen (Full HD) and "huge:" for 2560px and up (QHD / 4K). They also need enough
+  HEIGHT, so a wide but short window keeps the normal sizes and nothing gets cut off.
+*/
+@custom-variant big {
+  @media (min-width: 120rem) and (min-height: 53.75rem) {
+    @slot;
+  }
+}
+
+@custom-variant huge {
+  @media (min-width: 160rem) and (min-height: 75rem) {
+    @slot;
+  }
+}
+
+/*
   Design tokens taken from the moodboard (moodboard/inspo.png).
   Each --color-* here becomes a Tailwind class, e.g. --color-brand -> bg-brand, text-brand.
 */
@@ -121,6 +138,86 @@
     }
     to {
       stroke-dashoffset: 0;
+    }
+  }
+
+  /*
+    Whimsical extras for the login / sign-up pages: "animate-pop", "animate-breeze",
+    "animate-twinkle", "animate-drift" and "animate-tick". Like the ones above, they only use
+    "transform" (and opacity), and always go with motion-reduce:animate-none.
+  */
+  --animate-pop: pop 550ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  --animate-breeze: breeze 6s ease-in-out infinite;
+  --animate-twinkle: twinkle 2.8s ease-in-out infinite;
+  --animate-drift: drift 20s ease-in-out infinite;
+  --animate-tick: tick 4.5s ease-in-out infinite;
+
+  /* Grow from nothing with a little bounce. Pick the growing point with an origin-* class. */
+  @keyframes pop {
+    from {
+      opacity: 0;
+      transform: scale(0);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  /* A gentler "sway" for a big plant (a small angle, slowly). */
+  @keyframes breeze {
+    0%,
+    100% {
+      transform: rotate(-2.5deg);
+    }
+    50% {
+      transform: rotate(2.5deg);
+    }
+  }
+
+  /* Sparkle: fade and shrink, then shine again. */
+  @keyframes twinkle {
+    0%,
+    100% {
+      opacity: 0.25;
+      transform: scale(0.6);
+    }
+    50% {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  /* Wander around slowly (the soft background blobs). */
+  @keyframes drift {
+    0%,
+    100% {
+      transform: translate(0, 0) scale(1);
+    }
+    33% {
+      transform: translate(40px, -30px) scale(1.08);
+    }
+    66% {
+      transform: translate(-30px, 30px) scale(0.94);
+    }
+  }
+
+  /* Hidden, then shown for a while, then hidden again: a task that keeps getting ticked off. */
+  @keyframes tick {
+    0%,
+    25% {
+      opacity: 0;
+      transform: scale(0);
+    }
+    35%,
+    85% {
+      opacity: 1;
+      transform: none;
+    }
+    95%,
+    100% {
+      opacity: 0;
+      transform: scale(0);
     }
   }
 }

@@ -70,7 +70,7 @@ export function InviteView({ token }: { token: string }) {
 
   if (state.kind === "loading") {
     return (
-      <AuthCard title="Opening your invite...">
+      <AuthCard mood="invite" title="Opening your invite...">
         <p className="text-sm text-muted" role="status">
           One moment.
         </p>
@@ -80,7 +80,7 @@ export function InviteView({ token }: { token: string }) {
 
   if (state.kind === "gone") {
     return (
-      <AuthCard title="This invite can't be used">
+      <AuthCard mood="invite" title="This invite can't be used">
         <p className="text-sm text-muted">{state.message}</p>
         <Link href="/" className={`${secondaryButton} mt-6`}>
           Go to the DoSprout home page
@@ -104,7 +104,7 @@ export function InviteView({ token }: { token: string }) {
   );
 
   return (
-    <AuthCard title={`Join ${invite.name}`} subtitle={subtitle}>
+    <AuthCard mood="invite" title={`Join ${invite.name}`} subtitle={subtitle}>
       <div className="mb-6 flex items-center gap-3 rounded-xl bg-brand-soft p-4 text-brand">
         <Icon className="size-6 shrink-0" aria-hidden />
         <p className="font-medium">
@@ -117,7 +117,7 @@ export function InviteView({ token }: { token: string }) {
         <div className="space-y-3">
           <Link
             href={`/signup?invite=${encodeURIComponent(token)}&email=${encodeURIComponent(invite.email)}`}
-            className={`${primaryButton} block text-center`}
+            className={primaryButton}
           >
             Create an account and join
           </Link>

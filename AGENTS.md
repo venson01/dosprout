@@ -127,7 +127,14 @@ frontend/src/
                      dark browsers); Next.js adds the <link rel="icon"> by itself
   components/landing/ LandingPage (all sections of /, server components, no state) and AppPreview
                      (an HTML picture of the board, role="img")
-  components/auth/   AuthCard (shared look), LoginForm, SignupForm, InviteView
+  components/auth/   AuthCard (shared look: form card on drifting blobs + Field, PasswordField,
+                     SubmitButton), AuthArt (the blue panel on lg+: a sprout that grows, floating
+                     stickers; headline per `mood`), PasswordGrowth (sign-up password meter as a
+                     plant: seed -> flower), LoginForm, SignupForm, InviteView. Effects are CSS
+                     only (animate-pop / breeze / twinkle / drift / tick in globals.css).
+                     The page is exactly one screen tall (h-dvh, never scrolls); the sprout scene
+                     shrinks on short screens. Large monitors use the custom variants `big:`
+                     (1920px wide AND 860px tall) and `huge:` (2560 x 1200) from globals.css.
   components/team/   TeamView: members, organization card (add colleagues, move team), invite
                      links, create / rename / leave / delete a team. team-ui.tsx: Card, buttons,
                      CopyLink, InviteManager (shared with the Organization page)
