@@ -77,8 +77,8 @@ export class BackupStore {
       })),
       ...backup.tasks.map((task) => ({
         sql: `INSERT INTO tasks (id, team_id, title, description, status, priority, tag, start_at, due_at, position,
-                created_at, updated_at, completed_at, goal_id, estimate_minutes, assignee_id)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                created_at, updated_at, completed_at, goal_id, estimate_minutes, assignee_id, link)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         args: [
           taskIds.get(task.id)!,
           this.teamId,
@@ -97,6 +97,8 @@ export class BackupStore {
           task.estimateMinutes,
           // Older backups have no assigneeId.
           task.assigneeId && memberIds.has(task.assigneeId) ? task.assigneeId : null,
+          // Older backups have no link.
+          task.link?.trim() ?? "",
         ],
       })),
       ...backup.tasks.flatMap((task) =>

@@ -1,5 +1,5 @@
-import { AlarmClock, CalendarClock, CalendarDays, Flag } from "lucide-react";
-import { formatDateTime, isOverdue, PRIORITY_LABELS } from "@/lib/task-helpers";
+import { AlarmClock, CalendarClock, CalendarDays, ExternalLink, Flag } from "lucide-react";
+import { formatDateTime, isOverdue, linkLabel, PRIORITY_LABELS } from "@/lib/task-helpers";
 import { Avatar } from "@/components/layout/avatar";
 import { GOAL_COLOR_CLASSES } from "@/lib/goals";
 import type { Goal, Member, Priority, Task } from "@/lib/types";
@@ -51,6 +51,33 @@ export function AssigneeBadge({ member, isYou }: { member: Member; isYou: boolea
       <span className="sr-only">Assigned to: </span>
       <span className="truncate">{label}</span>
     </span>
+  );
+}
+
+/**
+ * A task's link (e.g. a video call): its site name, opening in a new tab.
+ * It stops clicks from reaching the row or board card around it, so clicking the
+ * link doesn't also open the task editor or start dragging the card.
+ */
+export function LinkBadge({ link }: { link: string }) {
+  if (!link) return null;
+  const stop = (event: React.SyntheticEvent) => event.stopPropagation();
+  return (
+    <a
+      href={link}
+      target="_blank"
+      rel="noopener noreferrer"
+      title={link}
+      onClick={stop}
+      onPointerDown={stop}
+      onKeyDown={stop}
+      className="inline-flex max-w-40 items-center gap-1 rounded text-xs text-brand outline-none hover:underline focus-visible:ring-2 focus-visible:ring-brand"
+    >
+      <ExternalLink className="size-3 shrink-0" aria-hidden />
+      <span className="sr-only">Open link: </span>
+      <span className="truncate">{linkLabel(link)}</span>
+      <span className="sr-only">(opens in a new tab)</span>
+    </a>
   );
 }
 

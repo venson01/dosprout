@@ -1,13 +1,26 @@
 "use client";
 
-import { AlarmClock, Bell, BellRing, CalendarClock, CircleCheck, X, type LucideIcon } from "lucide-react";
+import {
+  AlarmClock,
+  Bell,
+  BellRing,
+  CalendarClock,
+  CircleCheck,
+  ExternalLink,
+  Hourglass,
+  X,
+  type LucideIcon,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { showDesktopNotification, useDesktopNotifications } from "@/hooks/use-desktop-notifications";
 import { useDismiss } from "@/hooks/use-dismiss";
 import { markNotificationsRead, useNotificationsReadAt } from "@/hooks/use-notifications-read-at";
 import { useTaskList } from "@/hooks/tasks-context";
+import { linkLabel } from "@/lib/task-helpers";
+import type { Settings } from "@/lib/types";
 import {
+  isAboutStarting,
   notificationsFromTasks,
   timeAgo,
   type AppNotification,
@@ -15,13 +28,30 @@ import {
 } from "@/lib/notifications";
 
 const KIND_STYLES: Record<NotificationKind, { icon: LucideIcon; className: string; label: string }> = {
+  "starting-soon": { icon: Hourglass, className: "bg-brand-soft text-brand", label: "Starting soon" },
   start: { icon: CalendarClock, className: "bg-brand-soft text-brand", label: "Started" },
   "due-soon": { icon: AlarmClock, className: "bg-mid-bg text-mid", label: "Due tomorrow" },
   done: { icon: CircleCheck, className: "bg-low-bg text-low", label: "Done" },
 };
 
-// Pop-ups hide themselves after this long.
+// Pop-ups hide themselves after this long (except ones with a link to open, see Popup).
 const POPUP_MS = 6000;
+
+// Which setting switches each kind of notification on or off.
+const KIND_SETTING: Record<NotificationKind, keyof Settings["notifications"]> = {
+  "starting-soon": "startingSoon",
+  start: "started",
+  "due-soon": "dueSoon",
+  done: "done",
+};
+
+/**
+ * The link to offer with a notification: a task's link, but only around its start
+ * (a reminder or "has started"), not when it's due or done.
+ */
+function linkToOpen(notification: AppNotification): string | null {
+  return isAboutStarting(notification) && notification.task.link ? notification.task.link : null;
+}
 
 /**
  * The bell in the top bar (with the number of unread notifications and a list),
@@ -32,17 +62,18 @@ export function Notifications() {
   const { tasks, loadState, now, settings } = useTaskList();
   // Only the kinds switched on in Settings.
   const kinds = settings.notifications;
+  const reminderMinutes = settings.reminderMinutes;
   const notifications = useMemo(
     () =>
-      notificationsFromTasks(tasks, now).filter((n) =>
-        n.kind === "start" ? kinds.started : n.kind === "due-soon" ? kinds.dueSoon : kinds.done,
-      ),
-    [tasks, now, kinds.started, kinds.dueSoon, kinds.done],
+      notificationsFromTasks(tasks, now, reminderMinutes).filter((n) => kinds[KIND_SETTING[n.kind]]),
+    [tasks, now, reminderMinutes, kinds],
   );
   const readAt = useNotificationsReadAt();
   const unread = readAt === null ? 0 : notifications.filter((n) => n.at > readAt).length;
 
   const [open, setOpen] = useState(false);
+  // The pop-ups showing right now (newest first, at most 3).
+  const [popups, setPopups] = useState<AppNotification[]>([]);
   // When the list was opened, and what was unread at that moment (so those stay marked "new").
   const [openedAt, setOpenedAt] = useState(0);
   const [newSince, setNewSince] = useState<number | null>(null);
@@ -55,6 +86,9 @@ export function Notifications() {
       setOpenedAt(Date.now());
       setNewSince(readAt);
       markNotificationsRead();
+      // The list shows the same things (with their "Open link" buttons), and pop-ups
+      // with a link would otherwise cover it.
+      setPopups([]);
     }
     setOpen(!open);
   }
@@ -68,7 +102,6 @@ export function Notifications() {
   // Pop-ups: compare with the notifications we've already seen. Anything
   // that existed before you opened the app only goes into the list.
   const [seenIds, setSeenIds] = useState<Set<string> | null>(null);
-  const [popups, setPopups] = useState<AppNotification[]>([]);
   if (loadState === "ready") {
     if (seenIds === null) {
       setSeenIds(new Set(notifications.map((n) => n.id)));
@@ -76,7 +109,12 @@ export function Notifications() {
       const fresh = notifications.filter((n) => !seenIds.has(n.id));
       if (fresh.length > 0) {
         setSeenIds(new Set([...seenIds, ...fresh.map((n) => n.id)]));
-        setPopups((current) => [...fresh, ...current].slice(0, 3));
+        // A newer pop-up about the same task replaces the older one (e.g. "starts in 2 min"
+        // replaces "starts in 10 min"), so reminders don't pile up.
+        const freshTaskIds = new Set(fresh.map((n) => n.task.id));
+        setPopups((current) =>
+          [...fresh, ...current.filter((n) => !freshTaskIds.has(n.task.id))].slice(0, 3),
+        );
       }
     }
   }
@@ -92,8 +130,14 @@ export function Notifications() {
     for (const notification of popups) {
       if (sentToDesktop.current.has(notification.id)) continue;
       sentToDesktop.current.add(notification.id);
+      const link = linkToOpen(notification);
+      // Clicking it opens the task's link (e.g. the video call) when it's about to start.
+      // Browsers only let a page open a new tab right after a click, and a click on a
+      // desktop notification counts, so this is the moment to do it.
       showDesktopNotification(notification, () =>
-        router.push(`/tasks?q=${encodeURIComponent(notification.task.title)}`),
+        link
+          ? window.open(link, "_blank", "noopener,noreferrer")
+          : router.push(`/tasks?q=${encodeURIComponent(notification.task.title)}`),
       );
     }
   }, [popups, router]);
@@ -126,8 +170,8 @@ export function Notifications() {
             <DesktopNotificationsSetting />
             {notifications.length === 0 ? (
               <p className="px-4 py-8 text-center text-sm text-muted">
-                Nothing yet. You&apos;ll see a notification here when a task starts, is due
-                tomorrow, or is done.
+                Nothing yet. You&apos;ll see a notification here when a task is about to start,
+                starts, is due tomorrow, or is done.
               </p>
             ) : (
               <ul className="max-h-[60vh] overflow-y-auto py-1">
@@ -225,26 +269,52 @@ function NotificationRow({
   isNew: boolean;
   onClick: () => void;
 }) {
+  const link = linkToOpen(notification);
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="flex w-full items-start gap-3 px-4 py-2.5 text-left outline-none hover:bg-page focus-visible:bg-page"
-    >
-      <KindIcon kind={notification.kind} />
-      <span className="min-w-0 flex-1">
-        <span className="block text-sm">{notification.message}</span>
-        <span className="mt-0.5 block text-xs text-muted">
-          {KIND_STYLES[notification.kind].label} · {when}
+    <div className="flex items-start hover:bg-page">
+      <button
+        type="button"
+        onClick={onClick}
+        className={`flex min-w-0 flex-1 items-start gap-3 py-2.5 pl-4 text-left outline-none focus-visible:bg-page ${link ? "pr-2" : "pr-4"}`}
+      >
+        <KindIcon kind={notification.kind} />
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm">{notification.message}</span>
+          <span className="mt-0.5 block text-xs text-muted">
+            {KIND_STYLES[notification.kind].label} · {when}
+          </span>
         </span>
-      </span>
-      {isNew && (
-        <>
-          <span aria-hidden className="mt-2 size-2 shrink-0 rounded-full bg-brand" />
-          <span className="sr-only">(new)</span>
-        </>
+        {isNew && (
+          <>
+            <span aria-hidden className="mt-2 size-2 shrink-0 rounded-full bg-brand" />
+            <span className="sr-only">(new)</span>
+          </>
+        )}
+      </button>
+      {link && (
+        <div className="py-2.5 pr-4">
+          <OpenLinkButton link={link} />
+        </div>
       )}
-    </button>
+    </div>
+  );
+}
+
+/** "Open link" (e.g. join the video call), in a new tab. */
+function OpenLinkButton({ link, onOpened }: { link: string; onOpened?: () => void }) {
+  return (
+    <a
+      href={link}
+      target="_blank"
+      rel="noopener noreferrer"
+      onClick={onOpened}
+      title={link}
+      className="inline-flex shrink-0 items-center gap-1 rounded-md bg-brand px-2.5 py-1 text-xs font-medium text-white outline-none hover:bg-brand-hover focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
+    >
+      <ExternalLink className="size-3.5" aria-hidden />
+      Open link
+      <span className="sr-only">({linkLabel(link)}, opens in a new tab)</span>
+    </a>
   );
 }
 
@@ -257,11 +327,14 @@ function Popup({
   onOpen: () => void;
   onDismiss: (id: string) => void;
 }) {
-  // Hide by itself after a few seconds.
+  const link = linkToOpen(notification);
+  // Hide by itself after a few seconds, unless it has a link to open: browsers don't
+  // let a page open a link by itself, so it waits for your click (or the X).
   useEffect(() => {
+    if (link) return;
     const timer = setTimeout(() => onDismiss(notification.id), POPUP_MS);
     return () => clearTimeout(timer);
-  }, [notification.id, onDismiss]);
+  }, [notification.id, onDismiss, link]);
 
   return (
     <div className="pointer-events-auto flex items-start gap-3 rounded-xl border border-line bg-surface p-3 shadow-lg">
@@ -276,6 +349,7 @@ function Popup({
         </span>
         <span className="block text-sm">{notification.message}</span>
       </button>
+      {link && <OpenLinkButton link={link} onOpened={() => onDismiss(notification.id)} />}
       <button
         type="button"
         onClick={() => onDismiss(notification.id)}

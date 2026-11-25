@@ -521,6 +521,23 @@ describe("time tracking API", () => {
     });
     assert.equal(invalid.statusCode, 400);
   });
+
+  test("tasks can have a web link (http or https only)", async () => {
+    const task = await createTask({ title: "Stand-up", link: " https://meet.example.com/abc " });
+    assert.equal(task.link, "https://meet.example.com/abc", "trimmed");
+    assert.equal((await createTask({ title: "No link" })).link, "", "empty by default");
+
+    const changed = await inject({ method: "PATCH", url: `/api/tasks/${task.id}`, payload: { link: "http://zoom.example.com/j/1" } });
+    assert.equal((changed.json() as Task).link, "http://zoom.example.com/j/1");
+    const cleared = await inject({ method: "PATCH", url: `/api/tasks/${task.id}`, payload: { link: "" } });
+    assert.equal((cleared.json() as Task).link, "");
+
+    // The app opens this link, so only real web addresses are allowed.
+    for (const link of ["javascript:alert(1)", "meet.example.com", "https://has space.com", "ftp://x.com"]) {
+      const response = await inject({ method: "PATCH", url: `/api/tasks/${task.id}`, payload: { link } });
+      assert.equal(response.statusCode, 400, link);
+    }
+  });
 });
 
 describe("settings and backups API", () => {
@@ -539,11 +556,26 @@ describe("settings and backups API", () => {
     assert.equal(settings.focusMinutes, 50);
     assert.equal(settings.timerSounds, false);
     // Only dueSoon changed; the other notification kinds stay on.
-    assert.deepEqual(settings.notifications, { started: true, dueSoon: false, done: true, focus: true });
+    assert.deepEqual(settings.notifications, {
+      started: true,
+      startingSoon: true,
+      dueSoon: false,
+      done: true,
+      focus: true,
+    });
     assert.equal(settings.breakMinutes, 5);
 
     const again = (await inject({ method: "GET", url: "/api/settings" })).json() as Settings;
     assert.deepEqual(again, settings, "saved");
+  });
+
+  test("reminder times before a task starts can be changed", async () => {
+    assert.deepEqual(DEFAULT_SETTINGS.reminderMinutes, [15, 10, 2]);
+    const changed = await inject({ method: "PATCH", url: "/api/settings", payload: { reminderMinutes: [30, 5] } });
+    assert.equal(changed.statusCode, 200);
+    assert.deepEqual((changed.json() as Settings).reminderMinutes, [30, 5]);
+    const none = await inject({ method: "PATCH", url: "/api/settings", payload: { reminderMinutes: [] } });
+    assert.deepEqual((none.json() as Settings).reminderMinutes, [], "no reminders is allowed");
   });
 
   test("rejects invalid settings", async () => {
@@ -555,6 +587,10 @@ describe("settings and backups API", () => {
       { timerSounds: "loud" },
       { defaultDueTime: "5pm" },
       { tagSuggestions: ["Work", "Work"] },
+      { reminderMinutes: [10, 10] },
+      { reminderMinutes: [0] },
+      { reminderMinutes: [1, 2, 3, 4, 5, 6] },
+      { notifications: { startingSoon: "yes" } },
     ]) {
       const response = await inject({ method: "PATCH", url: "/api/settings", payload });
       assert.equal(response.statusCode, 400, JSON.stringify(payload));
@@ -563,7 +599,13 @@ describe("settings and backups API", () => {
 
   test("exports everything and imports it back exactly", async () => {
     const goal = (await inject({ method: "POST", url: "/api/goals", payload: { title: "Ship it" } })).json() as Goal;
-    const task = await createTask({ title: "Write docs", goalId: goal.id, subtasks: ["Intro"], estimateMinutes: 60 });
+    const task = await createTask({
+      title: "Write docs",
+      goalId: goal.id,
+      subtasks: ["Intro"],
+      estimateMinutes: 60,
+      link: "https://docs.example.com",
+    });
     await inject({
       method: "POST",
       url: "/api/time-entries",
@@ -588,6 +630,7 @@ describe("settings and backups API", () => {
     const [restored] = again.tasks;
     assert.equal(restored.title, "Write docs");
     assert.equal(restored.estimateMinutes, 60);
+    assert.equal(restored.link, "https://docs.example.com");
     assert.deepEqual(restored.subtasks.map((s) => s.title), ["Intro"]);
     assert.equal(again.goals.find((g) => g.id === restored.goalId)?.title, "Ship it");
     assert.equal(again.timeEntries.length, 1);

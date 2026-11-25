@@ -210,6 +210,11 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX day_plans_task_id ON day_plans(task_id);
   `,
+
+  // Version 11: a task can have a link (a web address, e.g. a video call). '' = none.
+  `
+  ALTER TABLE tasks ADD COLUMN link TEXT NOT NULL DEFAULT ''
+  `,
 ];
 
 export interface OpenDatabaseOptions {

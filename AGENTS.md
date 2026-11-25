@@ -244,7 +244,7 @@ the `X-Team-Id` header (your personal team when it's missing; 404 if you're not 
 | GET    | `/estimates`                         | (all your teams)                                  | `EstimateSample[]`: finished tasks on your plate with an estimate and your tracked time |
 | GET    | `/tasks`                             |                                                   | `Task[]`         |
 | GET    | `/tasks/:id`                         |                                                   | `Task`           |
-| POST   | `/tasks`                             | `title` (required), `description`, `status`, `priority`, `tag`, `startAt`, `dueAt`, `subtasks: string[]` | `Task` (201) |
+| POST   | `/tasks`                             | `title` (required), `description`, `status`, `priority`, `tag`, `startAt`, `dueAt`, `link`, `subtasks: string[]` | `Task` (201) |
 | PATCH  | `/tasks/:id`                         | any task field and/or `position`                  | `Task`           |
 | DELETE | `/tasks/:id`                         |                                                   | 204              |
 | POST   | `/tasks/:id/subtasks`                | `{ title }`                                       | parent `Task` (201) |
@@ -285,6 +285,10 @@ Data model:
 - `position`: order within a status column. Changing status without a position moves the task to the bottom.
 - `goalId`: the goal a task belongs to (one at most), or `null`.
 - `estimateMinutes`: how long a task should take (whole minutes, 1 to 60000), or `null`.
+- `link`: a web address that belongs to the task (e.g. a video call), `""` when there is none.
+  Only `http://` / `https://` (the app opens it; `LINK_SCHEMA` in `routes/tasks.ts`). The task
+  editor adds a missing `https://` (`normalizeLink`). Shown as `LinkBadge` (list rows, board cards,
+  My work) and as an "Open link" button on "Starting soon" / "has started" notifications.
 - `assigneeId`: the user id of the team member doing the task, or `null`. Must be a member of
   the task's team (400 otherwise). Removing someone from a team unassigns their tasks.
 - **Time entries** (`TimeEntry`): `taskId` (or `null`), `kind` (`timer` / `focus` / `manual`),
@@ -364,8 +368,16 @@ Data model:
 ## Notifications
 
 - Notifications are not stored. `notificationsFromTasks` (`lib/notifications.ts`) derives them from the
-  tasks: "started" at `startAt`, "due tomorrow" 24 hours before `dueAt`, and "done" at `completedAt`.
+  tasks: "starting soon" reminders before `startAt` (at `settings.reminderMinutes`, default 15, 10
+  and 2 minutes; listed only until the task starts), "started" at `startAt`, "due tomorrow" 24 hours
+  before `dueAt`, and "done" at `completedAt`.
   Starts and reminders only count if they fall after `createdAt` and before `completedAt`.
+- **Links at the start:** browsers block pages from opening a tab by themselves, so a task's link
+  can't open with no click. Instead, "starting soon" and "started" pop-ups for a task with a link
+  get an "Open link" button and stay until clicked or closed (others hide after 6 seconds), the
+  bell's list has the same button, and clicking the desktop notification opens the link (a click on
+  a notification lets the page open a tab). A newer pop-up about the same task replaces the older
+  one, and opening the bell's list closes the pop-ups.
 - `useClock` (via `TasksProvider`) re-renders exactly when the next start, reminder or due time
   arrives (and when the tab becomes visible again), so notifications and overdue styling appear
   on time without polling.
@@ -479,7 +491,8 @@ DoSprout's signature idea: it learns how long things *really* take you, and plan
 ## Settings and dark mode
 
 - `Settings` (see `types.ts`): `theme` (system / light / dark), `focusMinutes`, `breakMinutes`,
-  `timerSounds`, `weekStartsOn` (0 Sunday / 1 Monday), `notifications` (started / dueSoon / done / focus),
+  `timerSounds`, `weekStartsOn` (0 Sunday / 1 Monday), `notifications` (startingSoon / started /
+  dueSoon / done / focus), `reminderMinutes` (up to 5, e.g. `[15, 10, 2]`),
   `defaultStartTime`, `defaultDueTime`, `defaultPriority`, `tagSuggestions`, `workdayMinutes`
   (hours for tasks per day, for the Today page). Saved on the server
   (each person has their own). `DEFAULT_SETTINGS` exists in both `types.ts` files, and

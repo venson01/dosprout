@@ -18,6 +18,7 @@ export type DesktopNotificationStatus = "unsupported" | "blocked" | "off" | "on"
 const STORAGE_KEY = "dosprout:desktop-notifications";
 
 const TITLES: Record<NotificationKind, string> = {
+  "starting-soon": "Starting soon",
   start: "Task started",
   "due-soon": "Due tomorrow",
   done: "Task done",

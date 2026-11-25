@@ -20,7 +20,7 @@ import { useTaskList } from "@/hooks/tasks-context";
 import { isOverdue, STATUS_LABELS } from "@/lib/task-helpers";
 import { STATUSES, type Status, type Task } from "@/lib/types";
 import { useAuth } from "@/hooks/auth-context";
-import { AssigneeBadge, GoalBadge, OverdueBadge, PriorityBadge, TagBadge, TaskDate } from "./badges";
+import { AssigneeBadge, GoalBadge, LinkBadge, OverdueBadge, PriorityBadge, TagBadge, TaskDate } from "./badges";
 import type { TaskActions, TaskGroups } from "./task-actions";
 import { TaskMenu } from "./task-menu";
 import { TimeBadge } from "./time-badge";
@@ -238,11 +238,12 @@ function CardBody({
         </h3>
         {menu}
       </div>
-      {/* "empty:hidden" hides the line when there's no assignee, goal or tracked time. */}
+      {/* "empty:hidden" hides the line when there's no assignee, goal, tracked time or link. */}
       <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 empty:hidden">
         {assignee && <AssigneeBadge member={assignee} isYou={assignee.id === user.id} />}
         {goal && <GoalBadge goal={goal} />}
         <TimeBadge task={task} />
+        <LinkBadge link={task.link} />
       </div>
 
       {total > 0 && (

@@ -44,6 +44,11 @@ export interface Task {
   estimateMinutes: number | null;
   /** The team member (user id) the task is assigned to, or null. */
   assigneeId: number | null;
+  /**
+   * A web address that belongs to the task, e.g. a video call. "" when there is none.
+   * The app offers to open it when the task starts.
+   */
+  link: string;
   subtasks: Subtask[];
 }
 
@@ -58,6 +63,7 @@ export interface CreateTaskInput {
   goalId?: number | null;
   estimateMinutes?: number | null;
   assigneeId?: number | null;
+  link?: string;
   /** Titles of subtasks to create together with the task. */
   subtasks?: string[];
 }
@@ -152,7 +158,16 @@ export interface Settings {
   /** 0 = weeks start on Sunday, 1 = Monday (calendar and charts). */
   weekStartsOn: 0 | 1;
   /** Which kinds of notification to show (in the app and on the desktop). */
-  notifications: { started: boolean; dueSoon: boolean; done: boolean; focus: boolean };
+  notifications: {
+    started: boolean;
+    /** "Starts in 15 min" reminders (at the times in reminderMinutes). */
+    startingSoon: boolean;
+    dueSoon: boolean;
+    done: boolean;
+    focus: boolean;
+  };
+  /** How many minutes before a task starts to remind you, e.g. [15, 10, 2]. */
+  reminderMinutes: number[];
   /** Times filled in when you pick a start / due date for a new task, e.g. "09:00". */
   defaultStartTime: string;
   defaultDueTime: string;
@@ -173,7 +188,8 @@ export const DEFAULT_SETTINGS: Settings = {
   breakMinutes: 5,
   timerSounds: true,
   weekStartsOn: 1,
-  notifications: { started: true, dueSoon: true, done: true, focus: true },
+  notifications: { started: true, startingSoon: true, dueSoon: true, done: true, focus: true },
+  reminderMinutes: [15, 10, 2],
   defaultStartTime: "09:00",
   defaultDueTime: "17:00",
   defaultPriority: "mid",
