@@ -58,6 +58,20 @@ export function formatDateTime(timestamp: string): string {
   });
 }
 
+/** A short name for a task's link: "https://www.zoom.us/j/123" -> "zoom.us". */
+export function linkLabel(link: string): string {
+  try {
+    return new URL(link).hostname.replace(/^www\./, "");
+  } catch {
+    return link;
+  }
+}
+
+/** "2026-11-17T16:00:00.000Z" -> "5:00 PM" in the viewer's timezone. */
+export function formatTime(timestamp: string): string {
+  return new Date(timestamp).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+}
+
 const pad = (n: number) => String(n).padStart(2, "0");
 
 /** Splits a UTC timestamp into local values for <input type="date"> and <input type="time">. */

@@ -3,7 +3,7 @@
 import { Check, ChevronRight, Sprout, User, Users } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { GoalBadge, PriorityBadge, TaskDate } from "@/components/tasks/badges";
+import { GoalBadge, LinkBadge, PriorityBadge, TaskDate } from "@/components/tasks/badges";
 import { ErrorToast, LoadError, LoadingSkeleton } from "@/components/tasks/feedback";
 import { useAuth } from "@/hooks/auth-context";
 import { useTaskList } from "@/hooks/tasks-context";
@@ -247,6 +247,7 @@ function WorkRow({
             </span>
           )}
           {task.dueAt && !done && <TaskDate task={task} kind="due" showLabel />}
+          {!done && <LinkBadge link={task.link} />}
         </div>
       </div>
     </li>

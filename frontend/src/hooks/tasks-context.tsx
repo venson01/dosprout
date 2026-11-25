@@ -8,7 +8,7 @@ import { useTasks } from "./use-tasks";
 import { useTimer } from "./use-timer";
 
 type TaskList = ReturnType<typeof useTasks> & {
-  /** The current time in milliseconds. Changes exactly when a task starts, is due soon or is overdue. */
+  /** The current time in milliseconds. Changes exactly when a task starts (or a reminder is due), is due soon or is overdue. */
   now: number;
   /** The running timer and the focus/break cycle (see useTimer). */
   timer: ReturnType<typeof useTimer>;
@@ -24,7 +24,7 @@ const TasksContext = createContext<TaskList | null>(null);
 export function TasksProvider({ children }: { children: React.ReactNode }) {
   const { team } = useAuth();
   const taskList = useTasks(team.id);
-  const now = useClock(upcomingMoments(taskList.tasks));
+  const now = useClock(upcomingMoments(taskList.tasks, taskList.settings.reminderMinutes));
   const timer = useTimer(taskList.timeEntries, taskList, taskList.settings);
   return <TasksContext value={{ ...taskList, now, timer }}>{children}</TasksContext>;
 }

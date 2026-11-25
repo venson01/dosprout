@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { cannotManage } from "../auth.js";
 import type { TeamStore } from "../team-store.js";
+import { LINK_SCHEMA } from "./tasks.js";
 import {
   GOAL_COLORS,
   PRIORITIES,
@@ -28,10 +29,18 @@ const settingsFields = {
     additionalProperties: false,
     properties: {
       started: { type: "boolean" },
+      startingSoon: { type: "boolean" },
       dueSoon: { type: "boolean" },
       done: { type: "boolean" },
       focus: { type: "boolean" },
     },
+  },
+  // Minutes before a task starts, e.g. [15, 10, 2]. Up to 5 different ones, from 1 minute to 1 day.
+  reminderMinutes: {
+    type: "array",
+    maxItems: 5,
+    uniqueItems: true,
+    items: { type: "integer", minimum: 1, maximum: 1440 },
   },
   defaultStartTime: timeOfDay,
   defaultDueTime: timeOfDay,
@@ -99,6 +108,8 @@ const backupSchema = {
           goalId: nullableId,
           // Not in backups made before teams existed, so it isn't required.
           assigneeId: nullableId,
+          // Not in backups made before links existed, so it isn't required.
+          link: LINK_SCHEMA,
           estimateMinutes: { type: ["integer", "null"], minimum: 1, maximum: 60000 },
           subtasks: {
             type: "array",

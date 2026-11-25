@@ -10,6 +10,12 @@ import {
   type UpdateTaskInput,
 } from "../types.js";
 
+/**
+ * A task's link: "" (no link) or a web address starting with http:// or https://.
+ * Other kinds (like "javascript:...") are refused, because the app opens this link.
+ */
+export const LINK_SCHEMA = { type: "string", maxLength: 2000, pattern: "^\\s*(https?://\\S+)?\\s*$" } as const;
+
 // JSON schemas: Fastify uses these to reject bad requests with a 400 error
 // before our code runs, so the handlers can trust the data they receive.
 const title = { type: "string", minLength: 1, maxLength: 200, pattern: "\\S" } as const;
@@ -28,6 +34,7 @@ const taskFields = {
   estimateMinutes: { type: ["integer", "null"], minimum: 1, maximum: 60000 },
   // The team member (user id) doing the task. null = nobody.
   assigneeId: { type: ["integer", "null"], minimum: 1 },
+  link: LINK_SCHEMA,
 } as const;
 
 const taskIdParams = {

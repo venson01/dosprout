@@ -25,11 +25,16 @@ const FOCUS_OPTIONS = [15, 20, 25, 30, 45, 50, 60, 90];
 const BREAK_OPTIONS = [3, 5, 10, 15, 20, 30];
 
 const NOTIFICATION_OPTIONS: { key: keyof Settings["notifications"]; label: string; hint: string }[] = [
+  { key: "startingSoon", label: "Starting soon", hint: "Reminders before a task's start time." },
   { key: "started", label: "Task started", hint: "When a task's start time arrives." },
   { key: "dueSoon", label: "Due tomorrow", hint: "24 hours before a task is due." },
   { key: "done", label: "Task done", hint: "When a task is completed." },
   { key: "focus", label: "Focus & break", hint: "When a focus session or a break ends (desktop only)." },
 ];
+
+// The reminder times you can pick, in minutes before a task starts (up to MAX_REMINDERS of them).
+const REMINDER_OPTIONS = [60, 30, 15, 10, 5, 2, 1];
+const MAX_REMINDERS = 5;
 
 const PRIORITY_ACTIVE: Record<Priority, string> = {
   high: "border-high bg-high-bg text-high",
@@ -376,18 +381,26 @@ function NotificationSection({ settings, save }: SectionProps) {
     <Section title="Notifications" description="Shown in the bell's list, as pop-ups and on the desktop.">
       <ul className="divide-y divide-line">
         {NOTIFICATION_OPTIONS.map(({ key, label, hint }) => (
-          <li key={key} className="flex items-center gap-3 py-3 first:pt-0">
-            <div className="min-w-0 flex-1">
-              <p id={`${ids}-${key}`} className="text-sm font-medium">
-                {label}
-              </p>
-              <p className="text-xs text-muted">{hint}</p>
+          <li key={key} className="py-3 first:pt-0">
+            <div className="flex items-center gap-3">
+              <div className="min-w-0 flex-1">
+                <p id={`${ids}-${key}`} className="text-sm font-medium">
+                  {label}
+                </p>
+                <p className="text-xs text-muted">{hint}</p>
+              </div>
+              <Switch
+                checked={settings.notifications[key]}
+                onChange={(on) => save({ notifications: { [key]: on } })}
+                labelledBy={`${ids}-${key}`}
+              />
             </div>
-            <Switch
-              checked={settings.notifications[key]}
-              onChange={(on) => save({ notifications: { [key]: on } })}
-              labelledBy={`${ids}-${key}`}
-            />
+            {key === "startingSoon" && settings.notifications.startingSoon && (
+              <ReminderTimes
+                minutes={settings.reminderMinutes}
+                onChange={(reminderMinutes) => save({ reminderMinutes })}
+              />
+            )}
           </li>
         ))}
       </ul>
@@ -396,6 +409,49 @@ function NotificationSection({ settings, save }: SectionProps) {
         <DesktopNotificationsSetting />
       </div>
     </Section>
+  );
+}
+
+/** Buttons for picking when "Starting soon" reminders come, e.g. 15, 10 and 2 minutes before. */
+function ReminderTimes({ minutes, onChange }: { minutes: number[]; onChange: (minutes: number[]) => void }) {
+  const full = minutes.length >= MAX_REMINDERS;
+
+  function toggle(option: number) {
+    const next = minutes.includes(option) ? minutes.filter((m) => m !== option) : [...minutes, option];
+    // Biggest first, like the reminders arrive: 15, 10, 2.
+    onChange(next.sort((a, b) => b - a));
+  }
+
+  return (
+    <fieldset className="mt-3">
+      <legend className="mb-2 text-xs text-muted">
+        Remind me this long before the start{full ? ` (up to ${MAX_REMINDERS})` : ""}:
+      </legend>
+      <div className="flex flex-wrap gap-2">
+        {REMINDER_OPTIONS.map((option) => {
+          const active = minutes.includes(option);
+          // Once 5 are picked, the others are off until one is removed.
+          const disabled = !active && full;
+          return (
+            <button
+              key={option}
+              type="button"
+              aria-pressed={active}
+              disabled={disabled}
+              onClick={() => toggle(option)}
+              className={`rounded-lg border px-3 py-1.5 text-xs font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-brand disabled:cursor-not-allowed disabled:opacity-50 ${
+                active ? "border-brand bg-brand-soft text-brand" : "border-line text-muted hover:bg-page"
+              }`}
+            >
+              {option === 60 ? "1 hour" : `${option} min`}
+            </button>
+          );
+        })}
+      </div>
+      {minutes.length === 0 && (
+        <p className="mt-2 text-xs text-muted">Pick at least one time to get reminders, or turn this off.</p>
+      )}
+    </fieldset>
   );
 }
 

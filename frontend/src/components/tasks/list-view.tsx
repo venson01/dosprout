@@ -6,7 +6,7 @@ import { useTaskList } from "@/hooks/tasks-context";
 import { hasUnfinishedSubtasks, isOverdue, STATUS_LABELS } from "@/lib/task-helpers";
 import { STATUSES, type Status, type Task } from "@/lib/types";
 import { useAuth } from "@/hooks/auth-context";
-import { AssigneeBadge, GoalBadge, OverdueBadge, PriorityBadge, TagBadge, TaskDate } from "./badges";
+import { AssigneeBadge, GoalBadge, LinkBadge, OverdueBadge, PriorityBadge, TagBadge, TaskDate } from "./badges";
 import type { TaskActions, TaskGroups } from "./task-actions";
 import { TaskMenu } from "./task-menu";
 import { TimeBadge } from "./time-badge";
@@ -154,6 +154,7 @@ function TaskRow({ task, actions }: { task: Task; actions: TaskActions }) {
             {assignee && <AssigneeBadge member={assignee} isYou={assignee.id === user.id} />}
             {goal && <GoalBadge goal={goal} />}
             <TimeBadge task={task} />
+            <LinkBadge link={task.link} />
           </p>
           {/* Below xl the extra columns are shown under the title instead. */}
           <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1.5 xl:hidden">

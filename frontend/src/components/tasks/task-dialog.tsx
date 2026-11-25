@@ -72,6 +72,7 @@ function draftFromTask(
     goalId: task ? task.goalId : (defaultGoalId ?? null),
     estimateMinutes: task?.estimateMinutes ?? null,
     assigneeId: task?.assigneeId ?? null,
+    link: task?.link ?? "",
     subtasks: (task?.subtasks ?? []).map((s) => ({
       key: `id-${s.id}`,
       id: s.id,
@@ -79,6 +80,20 @@ function draftFromTask(
       done: s.done,
     })),
   };
+}
+
+/**
+ * Tidies up a typed link: trims it and adds "https://" when it's missing
+ * ("zoom.us/j/1" -> "https://zoom.us/j/1"). Returns "" for no link, or null when it
+ * isn't a web address (the API only accepts http:// and https:// links).
+ */
+function normalizeLink(typed: string): string | null {
+  const link = typed.trim();
+  if (!link) return "";
+  const scheme = /^[a-z][a-z0-9+.-]*:/i;
+  // "HTTPS://..." -> "https://..." (the API wants it in small letters).
+  const withScheme = scheme.test(link) ? link.replace(scheme, (s) => s.toLowerCase()) : `https://${link}`;
+  return /^https?:\/\/\S+$/.test(withScheme) && URL.canParse(withScheme) ? withScheme : null;
 }
 
 /**
@@ -167,12 +182,17 @@ export function TaskDialog({
       setError("The due date can't be earlier than the start date.");
       return;
     }
+    const link = normalizeLink(draft.link);
+    if (link === null) {
+      setError("The link should be a web address, like https://meet.google.com/abc-defg-hij.");
+      return;
+    }
     // Don't lose a subtask that was typed but not added yet.
     const pending = newSubtask.trim();
-    let finalDraft = draft;
+    let finalDraft = { ...draft, link };
     if (pending) {
       const subtasks = [...draft.subtasks, { key: newKey(), title: pending, done: false }];
-      finalDraft = { ...draft, subtasks, status: statusFromSubtasks(draft.status, subtasks) };
+      finalDraft = { ...finalDraft, subtasks, status: statusFromSubtasks(draft.status, subtasks) };
     }
 
     setSaving(true);
@@ -369,6 +389,28 @@ export function TaskDialog({
             hint={estimateHint(draft.estimateMinutes, draft.tag, estimates)}
             onChange={(minutes) => update("estimateMinutes", minutes)}
           />
+          <div>
+            <label htmlFor={`${ids}-link`} className="mb-1 block text-sm font-medium">
+              Link <span className="font-normal text-muted">(optional)</span>
+            </label>
+            <input
+              id={`${ids}-link`}
+              // "text" rather than "url", so "meet.google.com/abc" is accepted too
+              // (normalizeLink adds the https:// when saving).
+              type="text"
+              inputMode="url"
+              autoComplete="url"
+              maxLength={2000}
+              value={draft.link}
+              onChange={(e) => update("link", e.target.value)}
+              placeholder="e.g. a video call: https://meet.google.com/..."
+              aria-describedby={`${ids}-link-hint`}
+              className={inputClass}
+            />
+            <p id={`${ids}-link-hint`} className="mt-1 text-xs text-muted">
+              When the task starts, its reminder has a button that opens this link.
+            </p>
+          </div>
 
           <fieldset>
             <legend className="mb-2 text-sm font-medium">

@@ -41,6 +41,8 @@ export interface TaskDraft {
   estimateMinutes: number | null;
   /** The team member (user id) doing the task, or null. */
   assigneeId: number | null;
+  /** A web address (e.g. a video call), or "". */
+  link: string;
   subtasks: DraftSubtask[];
 }
 
@@ -194,6 +196,7 @@ export function useTasks(teamId: number) {
         goalId: draft.goalId,
         estimateMinutes: draft.estimateMinutes,
         assigneeId: draft.assigneeId,
+        link: draft.link,
       };
 
       if (!original) {

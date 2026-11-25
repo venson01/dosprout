@@ -26,6 +26,7 @@ interface TaskRow {
   goal_id: number | null;
   estimate_minutes: number | null;
   assignee_id: number | null;
+  link: string;
 }
 
 interface SubtaskRow {
@@ -63,6 +64,7 @@ function toTask(row: TaskRow, subtasks: Subtask[]): Task {
     goalId: row.goal_id,
     estimateMinutes: row.estimate_minutes,
     assigneeId: row.assignee_id,
+    link: row.link,
     subtasks,
   };
 }
@@ -118,6 +120,7 @@ const UPDATABLE_TASK_COLUMNS = {
   goalId: "goal_id",
   estimateMinutes: "estimate_minutes",
   assigneeId: "assignee_id",
+  link: "link",
   position: "position",
 } as const satisfies Record<keyof UpdateTaskInput, string>;
 
@@ -217,8 +220,8 @@ export class TaskStore {
       [
         {
           sql: `INSERT INTO tasks (team_id, title, description, status, priority, tag, start_at, due_at, goal_id,
-                  estimate_minutes, assignee_id, position, completed_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${NEXT_TASK_POSITION}, ${status === "done" ? NOW : "NULL"})`,
+                  estimate_minutes, assignee_id, link, position, completed_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${NEXT_TASK_POSITION}, ${status === "done" ? NOW : "NULL"})`,
           args: [
             this.teamId,
             input.title.trim(),
@@ -231,6 +234,7 @@ export class TaskStore {
             input.goalId ?? null,
             input.estimateMinutes ?? null,
             input.assigneeId ?? null,
+            input.link?.trim() ?? "",
             status,
             this.teamId,
           ],
